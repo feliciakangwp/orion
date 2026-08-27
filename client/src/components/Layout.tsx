@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
+import { resetDb } from '../local/db';
 import { usePersona } from '../PersonaContext';
 
 function PersonaSwitcher() {
@@ -43,7 +44,19 @@ export function Layout({ children }: { children: ReactNode }) {
           </NavLink>
         </nav>
         <div className="border-t border-slate-800 px-3 py-3 text-xs text-slate-500">
-          Budget Performance Management System
+          <p>Budget Performance Management System</p>
+          <p className="mt-1">All data lives only in this browser.</p>
+          <button
+            className="mt-2 text-indigo-400 hover:text-indigo-300 hover:underline"
+            onClick={() => {
+              if (confirm('Reset all ORION demo data in this browser? This cannot be undone.')) {
+                resetDb();
+                window.location.reload();
+              }
+            }}
+          >
+            Reset Demo Data
+          </button>
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">

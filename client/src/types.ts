@@ -1,7 +1,8 @@
 export const DEPTS = ['PSB', 'PCB', 'SIB', 'ACB', 'FIN'] as const;
 export type Dept = (typeof DEPTS)[number];
 
-export type DeptRoleType = 'Branch Rep' | 'DY Head' | 'Head' | 'SMGT';
+export const DEPT_ROLE_TYPES = ['Branch Rep', 'DY Head', 'Head', 'SMGT'] as const;
+export type DeptRoleType = (typeof DEPT_ROLE_TYPES)[number];
 export type FinRoleType = 'Fin Officer' | 'Fin Manager';
 export type RoleType = DeptRoleType | FinRoleType;
 

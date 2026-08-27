@@ -1,4 +1,22 @@
-import type { BudgetLine, Persona, WorkflowStep } from '../types';
+import type { BudgetLine, BudgetLineStatus, Persona, WorkflowStep } from '../types';
+
+export const STEP_STATUS: Record<WorkflowStep, (origin: BudgetLine['origin']) => BudgetLineStatus> = {
+  BRANCH_REP_DRAFT: (origin) => (origin === 'new' ? 'New' : 'Draft'),
+  REVIEWER1_R1: () => 'Pending Review',
+  FIN_OFFICER_R1: () => 'Clarification',
+  FIN_MANAGER_R1: () => 'Clarification',
+  BRANCH_REP_READY: () => 'Ready for Approval',
+  REVIEWER1_R2: () => 'Pending Approval',
+  REVIEWER2_R2: () => 'Pending Approval',
+  APPROVER_R2: () => 'Pending Approval',
+  FIN_OFFICER_R2: () => 'Pending Approval',
+  FIN_MANAGER_R2: () => 'Pending Approval',
+  DONE: () => 'Fin Supported',
+};
+
+export function statusFor(line: Pick<BudgetLine, 'step' | 'origin'>): BudgetLineStatus {
+  return STEP_STATUS[line.step](line.origin);
+}
 
 export type ActorRole = 'BranchRep' | 'Reviewer1' | 'Reviewer2' | 'Approver' | 'FinOfficer' | 'FinManager' | null;
 
@@ -16,6 +34,27 @@ export const STEP_ACTOR: Record<WorkflowStep, ActorRole> = {
   DONE: null,
 };
 
+const APPROVE_NEXT: Partial<Record<WorkflowStep, WorkflowStep>> = {
+  REVIEWER1_R1: 'FIN_OFFICER_R1',
+  FIN_OFFICER_R1: 'FIN_MANAGER_R1',
+  FIN_MANAGER_R1: 'BRANCH_REP_READY',
+  REVIEWER1_R2: 'REVIEWER2_R2',
+  REVIEWER2_R2: 'APPROVER_R2',
+  APPROVER_R2: 'FIN_OFFICER_R2',
+  FIN_OFFICER_R2: 'FIN_MANAGER_R2',
+  FIN_MANAGER_R2: 'DONE',
+};
+
+export function canApprove(step: WorkflowStep): boolean {
+  return step in APPROVE_NEXT;
+}
+
+export function nextOnApprove(step: WorkflowStep): WorkflowStep {
+  const next = APPROVE_NEXT[step];
+  if (!next) throw new Error(`No approval transition from step ${step}`);
+  return next;
+}
+
 export function isEditableByBranchRep(step: WorkflowStep): boolean {
   return step === 'BRANCH_REP_DRAFT' || step === 'BRANCH_REP_READY';
 }
@@ -24,11 +63,15 @@ export function canSubmit(step: WorkflowStep): boolean {
   return isEditableByBranchRep(step);
 }
 
-export function canApprove(step: WorkflowStep): boolean {
-  return step !== 'BRANCH_REP_DRAFT' && step !== 'BRANCH_REP_READY' && step !== 'DONE';
+export function nextOnSubmit(step: WorkflowStep): WorkflowStep {
+  if (step === 'BRANCH_REP_DRAFT') return 'REVIEWER1_R1';
+  if (step === 'BRANCH_REP_READY') return 'REVIEWER1_R2';
+  throw new Error(`No submit transition from step ${step}`);
 }
 
-export function personaCanAct(line: BudgetLine, persona: Persona, projectOpenedByDept: string): boolean {
+type ActableLine = Pick<BudgetLine, 'step' | 'reviewer1PersonaId' | 'reviewer2PersonaId' | 'approverPersonaId'>;
+
+export function personaCanAct(line: ActableLine, persona: Persona, projectOpenedByDept: string): boolean {
   const role = STEP_ACTOR[line.step];
   if (!role) return false;
   switch (role) {

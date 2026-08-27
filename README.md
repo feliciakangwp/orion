@@ -6,19 +6,59 @@ multi-step, role-based approval workflow.
 
 ## Stack
 
-- `server/` — Express + TypeScript API, persisted to a JSON file (`server/data/db.json`).
-  No real database is needed for this scope; the workflow/validation logic all
-  lives in `server/src/lib` and `server/src/routes`.
-- `client/` — React + TypeScript (Vite) + Tailwind CSS single-page app.
+- `client/` — React + TypeScript (Vite) + Tailwind CSS single-page app. This
+  is the deployed app: **it is fully static and self-contained**, with no
+  backend at all. All the workflow/validation/permission logic that would
+  normally live server-side (see `client/src/api.ts`, `client/src/lib/`, and
+  `client/src/local/db.ts`) runs in the browser, and all data is persisted to
+  the browser's own `localStorage` (see "Where does the data live" below).
+- `server/` — an alternative Express + TypeScript API (JSON-file persisted)
+  implementing the exact same behavior against a real backend. It's kept as
+  a reference/starting point if this is ever turned into a real multi-user
+  system with a shared database, but it is **not used by the deployed site**.
 
 There is no real authentication. Instead, a **persona switcher** in the top
 bar lets you act as any of the seeded personas — this is how the app
-simulates different users/roles for demoing the workflow. The client sends
-the chosen persona id as an `x-persona-id` header, and the server enforces
-all permission/workflow rules against it (the client-side gating is only for
-UX; the server is the source of truth).
+simulates different users/roles for demoing the workflow. All permission and
+workflow rules (who can edit what, who can approve at each step, etc.) are
+enforced in `client/src/api.ts` against whichever persona is currently
+selected.
+
+## Where does the data live
+
+Because this deploys as a static site (GitHub Pages), there is nowhere to
+run a shared backend. All projects, funding entries, budget lines, etc. are
+stored in **that browser's `localStorage`**, under the key `orion.db.v1`.
+Practically:
+
+- Data is private to one browser on one device — it is **not shared**
+  between different people or different devices. Switching personas via the
+  top-bar dropdown is how you view the *same* local data from a different
+  role's perspective (this is exactly how the app was already being
+  demoed), not a way to collaborate with someone else's browser.
+- Clearing site data / browsing in a private window / using a different
+  browser all start you over with a fresh seed.
+- The sidebar has a **"Reset Demo Data"** link that wipes and reseeds the
+  local store on demand.
+
+If you need real shared/multi-user data, point the client at the `server/`
+API instead (swap `client/src/api.ts`'s local implementation back for a
+fetch-based one — this is exactly what this repo's git history shows, since
+that's how the app originally worked before this static rewrite) and deploy
+`server/` somewhere that can run a Node process (Render, Fly.io, etc.).
 
 ## Running locally
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+Open the printed `localhost` URL. On first run the app seeds 24 personas
+(see below) into `localStorage`.
+
+To run the alternative real-backend version instead:
 
 ```bash
 # Terminal 1 — API server (http://localhost:4000)
@@ -26,15 +66,30 @@ cd server
 npm install
 npm run dev
 
-# Terminal 2 — client (http://localhost:5173, proxies /api to :4000)
+# Terminal 2 — client, pointed at the API instead of localStorage
+# (requires restoring the fetch-based client/src/api.ts)
 cd client
 npm install
 npm run dev
 ```
 
-On first run the server seeds 24 personas (see below) into
-`server/data/db.json`. `POST /api/dev/reseed` wipes and reseeds the store if
-you want a clean slate while testing.
+## Deployment (GitHub Pages)
+
+`.github/workflows/deploy.yml` builds `client/` and publishes it to GitHub
+Pages on every push to `main` or `claude/orion-budget-management-6qf8ii`.
+
+**One-time manual step** (repo settings aren't reachable via this tool):
+in the repo's **Settings → Pages**, set **Source** to **GitHub Actions**.
+After that, the workflow deploys automatically, and the site is served at:
+
+```
+https://<owner>.github.io/orion/
+```
+
+(`vite.config.ts`'s `base: '/orion/'` and the app's use of `HashRouter`
+are both there to make routing work correctly under that GitHub Pages
+subpath — GitHub Pages has no server-side rewrite for client-side routes,
+so a path-based router would 404 on refresh of a deep link.)
 
 ## Personas
 

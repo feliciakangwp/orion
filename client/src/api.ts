@@ -112,7 +112,6 @@ export const api = {
           financeOfficerId: null,
           openedByPersonaId: persona.id,
           openedByDept: persona.dept!,
-          simulationYear: new Date().getFullYear(),
           createdAt: now(),
           updatedAt: now(),
         };
@@ -130,16 +129,12 @@ export const api = {
           if ('title' in data) project.title = data.title!;
           if ('justification' in data) project.justification = data.justification!;
           if ('additionalComments' in data) project.additionalComments = data.additionalComments!;
-          if ('simulationYear' in data) project.simulationYear = Number(data.simulationYear);
         }
         if (finance && project.status === 'Request to Create') {
           if ('subAccount' in data) project.subAccount = data.subAccount!;
           if ('developmentCostCentre' in data) project.developmentCostCentre = data.developmentCostCentre!;
           if ('operatingCostCentre' in data) project.operatingCostCentre = data.operatingCostCentre!;
           if ('financeOfficerId' in data) project.financeOfficerId = data.financeOfficerId!;
-        }
-        if (isOwningBranchRep(persona, project) && 'simulationYear' in data) {
-          project.simulationYear = Number(data.simulationYear);
         }
         project.updatedAt = now();
         saveDb();
@@ -255,7 +250,7 @@ export const api = {
           .budgetLines.filter((l) => l.projectId === projectId && l.kind === kind)
           .map(withComputed)
       ),
-    create: (projectId: string, kind: BudgetKind, origin: 'new' | 'carried_forward' = 'new') =>
+    create: (projectId: string, kind: BudgetKind, simulationYear: number, origin: 'new' | 'carried_forward' = 'new') =>
       run(() => {
         const persona = requirePersona();
         const project = getProjectOrThrow(projectId);
@@ -278,7 +273,7 @@ export const api = {
           buildOrBuy: '',
           basis: '',
           budgetType: kind === 'RB' || kind === 'OB' ? kind : null,
-          periods: emptyPeriods(kind, project.simulationYear),
+          periods: emptyPeriods(kind, simulationYear),
           assignedToPersonaId: persona.id,
           reviewer1PersonaId: null,
           reviewer2PersonaId: null,
@@ -292,7 +287,7 @@ export const api = {
         saveDb();
         return withComputed(line);
       }),
-    update: (id: string, data: Partial<BudgetLine>) =>
+    update: (id: string, data: Partial<BudgetLine>, simulationYear: number) =>
       run(() => {
         const persona = requirePersona();
         const db = getDb();
@@ -327,19 +322,19 @@ export const api = {
           line.buildOrBuy = '';
         }
 
-        const keys = periodKeys(line.kind, project.simulationYear);
+        const keys = periodKeys(line.kind, simulationYear);
         if ('periods' in data) {
           const incoming = data.periods as Record<string, number>;
           if (line.recurring === 'Yes') {
             const baseAmount = Number(incoming[keys[0]] ?? line.periods[keys[0]] ?? 0);
-            line.periods = applyRecurringInflation(line.kind, project.simulationYear, line.recurring, line.itProject, baseAmount);
+            line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount);
           } else {
-            line.periods = { ...emptyPeriods(line.kind, project.simulationYear), ...line.periods, ...incoming };
+            line.periods = { ...emptyPeriods(line.kind, simulationYear), ...line.periods, ...incoming };
           }
         } else if ('recurring' in data || 'itProject' in data) {
           if (line.recurring === 'Yes') {
             const baseAmount = Number(line.periods[keys[0]] ?? 0);
-            line.periods = applyRecurringInflation(line.kind, project.simulationYear, line.recurring, line.itProject, baseAmount);
+            line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount);
           }
         }
 

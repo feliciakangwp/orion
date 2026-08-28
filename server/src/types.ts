@@ -36,7 +36,6 @@ export interface Project {
   // Ownership
   openedByPersonaId: string;
   openedByDept: Dept;
-  simulationYear: number;
   createdAt: string;
   updatedAt: string;
 }

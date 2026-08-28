@@ -27,7 +27,6 @@ export interface Project {
   financeOfficerId: string | null;
   openedByPersonaId: string;
   openedByDept: Dept;
-  simulationYear: number;
   createdAt: string;
   updatedAt: string;
 }

@@ -23,6 +23,24 @@ function PersonaSwitcher() {
   );
 }
 
+function SimulationYearControl() {
+  const { simulationYear, setSimulationYear } = usePersona();
+  return (
+    <label className="flex items-center gap-2 text-sm text-slate-200">
+      <span className="text-slate-400">Simulation Year</span>
+      <input
+        type="number"
+        className="w-24 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-white"
+        value={simulationYear}
+        onChange={(e) => {
+          const year = Number(e.target.value);
+          if (Number.isFinite(year)) setSimulationYear(year);
+        }}
+      />
+    </label>
+  );
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100">
@@ -64,7 +82,10 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="text-sm font-medium text-slate-300">
             ORION &mdash; Budget Performance Management System
           </div>
-          <PersonaSwitcher />
+          <div className="flex items-center gap-5">
+            <SimulationYearControl />
+            <PersonaSwitcher />
+          </div>
         </header>
         <main className="min-w-0 flex-1 overflow-auto p-6">{children}</main>
       </div>

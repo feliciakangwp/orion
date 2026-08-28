@@ -30,7 +30,7 @@ function BudgetLineRow({
   onServerUpdate: (line: BudgetLine) => void;
   onRemoved: (id: string) => void;
 }) {
-  const { currentPersona, personas } = usePersona();
+  const { currentPersona, personas, simulationYear } = usePersona();
   const [error, setError] = useState<string | null>(null);
   const isOwningBranchRep = currentPersona?.roleType === 'Branch Rep' && currentPersona.dept === project.openedByDept;
   const editable = isOwningBranchRep && isEditableByBranchRep(line.step);
@@ -47,7 +47,7 @@ function BudgetLineRow({
   async function patch(data: Partial<BudgetLine>) {
     setError(null);
     try {
-      const updated = await api.budgetLines.update(line.id, data);
+      const updated = await api.budgetLines.update(line.id, data, simulationYear);
       onServerUpdate(updated);
     } catch (e) {
       setError((e as Error).message);
@@ -319,7 +319,7 @@ function BudgetLineRow({
 }
 
 export function BudgetLinesTab({ project, kind }: { project: Project; kind: BudgetKind }) {
-  const { currentPersona } = usePersona();
+  const { currentPersona, simulationYear } = usePersona();
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [fundingEntries, setFundingEntries] = useState<FundingEntry[]>([]);
 
@@ -331,17 +331,21 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
 
   const isOwningBranchRep = currentPersona?.roleType === 'Branch Rep' && currentPersona.dept === project.openedByDept;
 
+  // MTE/Block period keys follow the global Simulation Year (top bar) rather
+  // than a per-project setting, so every project is compared on the same FY
+  // horizon. Existing lines keep whatever keys they were created with;
+  // only the "no lines yet" fallback (and new lines) reflect the current year.
   const keys = useMemo(() => {
     if (lines.length > 0) return Object.keys(lines[0].periods);
-    return periodKeys(kind, project.simulationYear);
-  }, [lines, kind, project.simulationYear]);
+    return periodKeys(kind, simulationYear);
+  }, [lines, kind, simulationYear]);
 
   async function addNew() {
-    await api.budgetLines.create(project.id, kind, 'new');
+    await api.budgetLines.create(project.id, kind, simulationYear, 'new');
     reload();
   }
   async function addCarriedForward() {
-    await api.budgetLines.create(project.id, kind, 'carried_forward');
+    await api.budgetLines.create(project.id, kind, simulationYear, 'carried_forward');
     reload();
   }
 

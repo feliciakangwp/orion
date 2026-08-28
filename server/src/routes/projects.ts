@@ -38,7 +38,6 @@ projectsRouter.post('/', (req, res) => {
     financeOfficerId: null,
     openedByPersonaId: persona.id,
     openedByDept: persona.dept!,
-    simulationYear: new Date().getFullYear(),
     createdAt: now,
     updatedAt: now,
   };
@@ -68,7 +67,6 @@ projectsRouter.patch('/:id', (req, res) => {
     if ('title' in body) project.title = body.title;
     if ('justification' in body) project.justification = body.justification;
     if ('additionalComments' in body) project.additionalComments = body.additionalComments;
-    if ('simulationYear' in body) project.simulationYear = Number(body.simulationYear);
   }
 
   if (isFinance && project.status === 'Request to Create') {
@@ -76,12 +74,6 @@ projectsRouter.patch('/:id', (req, res) => {
     if ('developmentCostCentre' in body) project.developmentCostCentre = body.developmentCostCentre;
     if ('operatingCostCentre' in body) project.operatingCostCentre = body.operatingCostCentre;
     if ('financeOfficerId' in body) project.financeOfficerId = body.financeOfficerId;
-  }
-
-  // simulationYear can also be adjusted post-Active by the owning Branch Rep
-  // for MTE/Block simulation purposes.
-  if (isBranchRepOwner(persona, project) && 'simulationYear' in body) {
-    project.simulationYear = Number(body.simulationYear);
   }
 
   project.updatedAt = new Date().toISOString();

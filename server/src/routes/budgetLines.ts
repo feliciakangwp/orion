@@ -44,6 +44,10 @@ budgetLinesRouter.post('/projects/:projectId/budget-lines', (req, res) => {
     return res.status(400).json({ error: 'Invalid kind' });
   }
   const origin = req.body?.origin === 'carried_forward' ? 'carried_forward' : 'new';
+  // The simulation year is a global, client-side "what-if" setting rather
+  // than something stored per project, so the caller passes it explicitly
+  // for whichever FY horizon it wants new MTE/Block periods generated on.
+  const simulationYear = Number(req.body?.simulationYear) || new Date().getFullYear();
   const now = new Date().toISOString();
   const line: BudgetLine = {
     id: nextId('line'),
@@ -63,7 +67,7 @@ budgetLinesRouter.post('/projects/:projectId/budget-lines', (req, res) => {
     buildOrBuy: '',
     basis: '',
     budgetType: kind === 'RB' || kind === 'OB' ? kind : null,
-    periods: emptyPeriods(kind, project.simulationYear),
+    periods: emptyPeriods(kind, simulationYear),
     assignedToPersonaId: persona.id,
     reviewer1PersonaId: null,
     reviewer2PersonaId: null,
@@ -120,20 +124,22 @@ budgetLinesRouter.patch('/budget-lines/:id', (req, res) => {
 
   // Recompute periods: if recurring, auto-populate from the first period's
   // base amount with y-o-y inflation. Otherwise take whatever was supplied.
-  const keys = periodKeys(line.kind, project.simulationYear);
+  // simulationYear is the caller's current global setting, not project state.
+  const simulationYear = Number(body.simulationYear) || new Date().getFullYear();
+  const keys = periodKeys(line.kind, simulationYear);
   if ('periods' in body) {
     const incoming = body.periods as Record<string, number>;
     if (line.recurring === 'Yes') {
       const baseAmount = Number(incoming[keys[0]] ?? line.periods[keys[0]] ?? 0);
-      line.periods = applyRecurringInflation(line.kind, project.simulationYear, line.recurring, line.itProject, baseAmount);
+      line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount);
     } else {
-      line.periods = { ...emptyPeriods(line.kind, project.simulationYear), ...line.periods, ...incoming };
+      line.periods = { ...emptyPeriods(line.kind, simulationYear), ...line.periods, ...incoming };
     }
   } else if ('recurring' in body || 'itProject' in body) {
     // Toggling recurring/IT-project recalculates from the existing base amount.
     if (line.recurring === 'Yes') {
       const baseAmount = Number(line.periods[keys[0]] ?? 0);
-      line.periods = applyRecurringInflation(line.kind, project.simulationYear, line.recurring, line.itProject, baseAmount);
+      line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount);
     }
   }
 

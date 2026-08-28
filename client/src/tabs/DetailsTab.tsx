@@ -32,7 +32,6 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
         developmentCostCentre: form.developmentCostCentre,
         operatingCostCentre: form.operatingCostCentre,
         financeOfficerId: form.financeOfficerId,
-        simulationYear: form.simulationYear,
       });
       onChange();
     } catch (e) {
@@ -69,15 +68,6 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
           <div>
             <StatusBadge status={project.status} />
           </div>
-        </Field>
-        <Field label="Simulation Year" hint="Drives the FY columns shown in MTE and Block">
-          <input
-            type="number"
-            className={inputCls}
-            value={form.simulationYear}
-            disabled={!isOwningBranchRep}
-            onChange={(e) => setForm({ ...form, simulationYear: Number(e.target.value) })}
-          />
         </Field>
 
         <div className="col-span-2">

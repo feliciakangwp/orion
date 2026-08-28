@@ -113,10 +113,12 @@ so a path-based router would 404 on refresh of a deep link.)
   Funding Pot ID. Mainstreaming entries stay Pipeline forever and can only be
   swapped by the Branch Rep to a different, non-Mainstreaming source.
 - **MTE** / **Block** tabs — identical structure, 15 vs. 5 FY columns
-  starting from the project's Simulation Year (e.g. 2026 → FY26). Recurring
-  lines auto-populate the remaining periods from the first period's amount
-  (5% p.a. if it's an IT project, 3% p.a. otherwise); non-recurring lines are
-  keyed independently.
+  starting from the global **Simulation Year** control in the top bar (next
+  to the persona switcher — e.g. set it to 2026 and the first column reads
+  FY26). It applies across every project, so switching it is a "what-if"
+  lens rather than a per-project setting. Recurring lines auto-populate the
+  remaining periods from the first period's amount (5% p.a. if it's an IT
+  project, 3% p.a. otherwise); non-recurring lines are keyed independently.
 - **RB** / **OB** tabs — same fields, Apr–Mar monthly columns instead of FY
   columns, Budget Type fixed to the tab.
 - **Team Members** tab — add/remove personas as team members.
@@ -138,8 +140,11 @@ so a path-based router would 404 on refresh of a deep link.)
   to the Branch Rep's draft for rework — not explicitly specified, but
   necessary for the workflow to be usable (otherwise there's no way to
   correct a line once submitted).
-- **Simulation Year** is a single field on the Project (editable by its
-  Branch Rep) that drives both the MTE and Block FY column headers.
+- **Simulation Year** is a global setting (top bar, alongside the persona
+  switcher), not a per-project field — every project's MTE/Block tabs read
+  the same year. Existing budget lines keep whatever FY keys they were
+  created under; changing the year only affects the header shown for
+  projects with no lines yet and any lines created from that point on.
 - "Pull Forward (Draft)" creates a budget line with origin `carried_forward`
   (status shows **Draft** instead of **New**) — the spec doesn't define how
   prior-year data actually gets copied in, so this is a stub for that origin

@@ -5,6 +5,7 @@ import type { BudgetKind, BudgetLine, HistoryEntry } from '../types.js';
 import { applyRecurringInflation, emptyPeriods, periodKeys, sumPeriods } from '../lib/calc.js';
 import {
   canApprove,
+  canSeeLine,
   canSubmit,
   isEditableByBranchRep,
   nextOnApprove,
@@ -23,10 +24,19 @@ function isOwningBranchRep(persona: { roleType: string; dept: string | null }, p
   return persona.roleType === 'Branch Rep' && persona.dept === project.openedByDept;
 }
 
+// Visibility, not just editability: a line is only returned if the acting
+// persona is tagged on it (assigned/reviewer/approver/finance officer) or is
+// a team member of the project. Finance (Fin Officer/Fin Manager) sees every
+// line regardless.
 budgetLinesRouter.get('/projects/:projectId/budget-lines', (req, res) => {
+  const persona = requirePersona(req, res);
+  if (!persona) return;
+  const db = getDb();
   const kind = req.query.kind as BudgetKind | undefined;
-  let lines = getDb().budgetLines.filter((l) => l.projectId === req.params.projectId);
+  const teamMemberPersonaIds = db.teamMembers.filter((m) => m.projectId === req.params.projectId).map((m) => m.personaId);
+  let lines = db.budgetLines.filter((l) => l.projectId === req.params.projectId);
   if (kind) lines = lines.filter((l) => l.kind === kind);
+  lines = lines.filter((l) => canSeeLine(l, persona, teamMemberPersonaIds));
   res.json(lines.map(withComputed));
 });
 

@@ -327,9 +327,13 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
     api.budgetLines.list(project.id, kind).then(setLines);
     api.funding.list(project.id).then(setFundingEntries);
   }
-  useEffect(reload, [project.id, kind]);
+  // Re-fetch on persona change too: which lines are visible depends on who's
+  // acting (see canSeeLine), so switching personas must refresh the list
+  // rather than leaving the previous persona's view on screen.
+  useEffect(reload, [project.id, kind, currentPersona?.id]);
 
   const isOwningBranchRep = currentPersona?.roleType === 'Branch Rep' && currentPersona.dept === project.openedByDept;
+  const isFinance = currentPersona?.roleType === 'Fin Officer' || currentPersona?.roleType === 'Fin Manager';
 
   // MTE/Block period keys follow the global Simulation Year (top bar) rather
   // than a per-project setting, so every project is compared on the same FY
@@ -418,13 +422,21 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
             {lines.length === 0 && (
               <tr>
                 <td colSpan={22} className="px-4 py-8 text-center text-slate-400">
-                  No {KIND_LABEL[kind]} lines yet.
+                  {isFinance
+                    ? `No ${KIND_LABEL[kind]} lines yet.`
+                    : `No ${KIND_LABEL[kind]} lines visible to you yet — you'll see a line once you're tagged on it (assigned, reviewing, approving, or as its Finance Officer) or added as a project team member.`}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </Card>
+      {!isFinance && (
+        <p className="mt-2 text-xs text-slate-400">
+          You only see {KIND_LABEL[kind]} lines you&rsquo;re tagged on or where you&rsquo;re a project team member.
+          Finance can see every line.
+        </p>
+      )}
       <p className="mt-2 text-xs text-slate-400">
         Recurring lines auto-calculate later periods from the first period&rsquo;s amount (5% p.a. for IT projects,
         3% p.a. otherwise). Non-recurring lines are keyed independently per period.

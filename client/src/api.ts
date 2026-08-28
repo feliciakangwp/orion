@@ -8,7 +8,7 @@
 // permission and workflow rules a real server would enforce.
 import { getDb, nextId, saveDb, type StoredBudgetLine } from './local/db';
 import { applyRecurringInflation, emptyPeriods, periodKeys, sumPeriods } from './lib/calc';
-import { canApprove, canSubmit, isEditableByBranchRep, nextOnApprove, nextOnSubmit, personaCanAct, statusFor } from './lib/workflow';
+import { canApprove, canSeeLine, canSubmit, isEditableByBranchRep, nextOnApprove, nextOnSubmit, personaCanAct, statusFor } from './lib/workflow';
 import {
   EXTERNAL_FUNDING_SOURCES,
   INTERNAL_FUNDING_SOURCES,
@@ -244,12 +244,20 @@ export const api = {
       }),
   },
   budgetLines: {
+    // Visibility, not just editability: a line is only returned if the
+    // acting persona is tagged on it (assigned/reviewer/approver/finance
+    // officer) or is a team member of the project. Finance (Fin Officer/Fin
+    // Manager) sees every line regardless.
     list: (projectId: string, kind: BudgetKind) =>
-      run(() =>
-        getDb()
-          .budgetLines.filter((l) => l.projectId === projectId && l.kind === kind)
-          .map(withComputed)
-      ),
+      run(() => {
+        const persona = requirePersona();
+        const db = getDb();
+        const teamMemberPersonaIds = db.teamMembers.filter((m) => m.projectId === projectId).map((m) => m.personaId);
+        return db.budgetLines
+          .filter((l) => l.projectId === projectId && l.kind === kind)
+          .filter((l) => canSeeLine(l, persona, teamMemberPersonaIds))
+          .map(withComputed);
+      }),
     create: (projectId: string, kind: BudgetKind, simulationYear: number, origin: 'new' | 'carried_forward' = 'new') =>
       run(() => {
         const persona = requirePersona();

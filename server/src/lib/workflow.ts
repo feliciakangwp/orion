@@ -101,3 +101,26 @@ export function personaCanAct(
 export function returnToBranchRep(line: BudgetLine): WorkflowStep {
   return 'BRANCH_REP_DRAFT';
 }
+
+type TaggableLine = Pick<
+  BudgetLine,
+  'assignedToPersonaId' | 'reviewer1PersonaId' | 'reviewer2PersonaId' | 'approverPersonaId' | 'financeOfficerPersonaId'
+>;
+
+// Line-level visibility: Finance sees every line. Everyone else only sees a
+// line if they're tagged on it somewhere (creator, reviewer, approver, or
+// finance officer) or they're a team member of the project — being of the
+// same department, or even the owning Branch Rep's own dept hierarchy, is
+// not by itself enough.
+export function canSeeLine(line: TaggableLine, persona: Persona, teamMemberPersonaIds: readonly string[]): boolean {
+  if (persona.roleType === 'Fin Officer' || persona.roleType === 'Fin Manager') return true;
+  const taggedIds = [
+    line.assignedToPersonaId,
+    line.reviewer1PersonaId,
+    line.reviewer2PersonaId,
+    line.approverPersonaId,
+    line.financeOfficerPersonaId,
+  ];
+  if (taggedIds.includes(persona.id)) return true;
+  return teamMemberPersonaIds.includes(persona.id);
+}

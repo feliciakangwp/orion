@@ -128,6 +128,14 @@ so a path-based router would 404 on refresh of a deep link.)
      Officer, then Fin Manager) → **Ready for Approval** (back to Branch Rep).
   2. Branch Rep resubmits → **Pending Approval** through Reviewer 1 →
      Reviewer 2 → Approver → Fin Officer → Fin Manager → **Fin Supported**.
+- **Line-level visibility**: a persona only sees a budget line (MTE/RB/OB/
+  Block) if they're tagged on it somewhere (assigned to, Reviewer 1,
+  Reviewer 2, Approver, or Finance Officer) or they're a team member of the
+  project — see `canSeeLine` in `client/src/lib/workflow.ts`. Finance (Fin
+  Officer/Fin Manager) is the one exception and always sees every line. This
+  is stricter than the rest of the app's department-based gating: even a
+  Head/DY Head/SMGT of the line's own department can't see a line unless
+  they're actually tagged on it or added as a team member.
 
 ## Assumptions made where the spec was ambiguous
 
@@ -150,3 +158,9 @@ so a path-based router would 404 on refresh of a deep link.)
   prior-year data actually gets copied in, so this is a stub for that origin
   flag rather than a real carry-forward-values implementation.
 - Authentication is out of scope; the persona switcher stands in for login.
+- Line-level visibility (and every other permission check) is enforced in
+  `client/src/api.ts`, not by a real trust boundary — since the whole app
+  runs client-side against `localStorage`, anyone with devtools can read the
+  raw data regardless of which persona the UI is currently showing. This
+  matches the rest of the app's access control, which was never intended as
+  real security, only as an accurate simulation of the business rules.

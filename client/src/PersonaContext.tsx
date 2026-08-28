@@ -27,27 +27,37 @@ function readStoredYear(): number {
 
 export function PersonaProvider({ children }: { children: ReactNode }) {
   const [personas, setPersonas] = useState<Persona[]>([]);
-  const [currentPersonaId, setCurrentPersonaIdState] = useState<string | null>(
-    () => localStorage.getItem(PERSONA_STORAGE_KEY)
-  );
+  // Track the acting persona in a ref, not just state: api.ts's module-level
+  // currentPersonaId must be updated synchronously, in the same tick as the
+  // change, never via a useEffect. React fires a child component's effects
+  // before its ancestor's, so a consumer (e.g. BudgetLinesTab) that re-fetches
+  // on persona change in its own effect would otherwise run before this
+  // provider's effect had a chance to call setApiPersona — reading the
+  // *previous* persona's data for one render.
+  const [currentPersonaId, setCurrentPersonaIdRaw] = useState<string | null>(() => {
+    const stored = localStorage.getItem(PERSONA_STORAGE_KEY);
+    setApiPersona(stored);
+    return stored;
+  });
   const [simulationYear, setSimulationYearState] = useState<number>(readStoredYear);
   const [loading, setLoading] = useState(true);
+
+  function setCurrentPersonaId(id: string) {
+    setApiPersona(id);
+    localStorage.setItem(PERSONA_STORAGE_KEY, id);
+    setCurrentPersonaIdRaw(id);
+  }
 
   useEffect(() => {
     api.personas.list().then((list) => {
       setPersonas(list);
       setLoading(false);
       if (!currentPersonaId && list.length > 0) {
-        setCurrentPersonaIdState(list[0].id);
+        setCurrentPersonaId(list[0].id);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    setApiPersona(currentPersonaId);
-    if (currentPersonaId) localStorage.setItem(PERSONA_STORAGE_KEY, currentPersonaId);
-  }, [currentPersonaId]);
 
   useEffect(() => {
     localStorage.setItem(YEAR_STORAGE_KEY, String(simulationYear));
@@ -63,7 +73,7 @@ export function PersonaProvider({ children }: { children: ReactNode }) {
       value={{
         personas,
         currentPersona,
-        setCurrentPersonaId: setCurrentPersonaIdState,
+        setCurrentPersonaId,
         loading,
         simulationYear,
         setSimulationYear: setSimulationYearState,

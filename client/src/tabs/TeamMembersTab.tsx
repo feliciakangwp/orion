@@ -39,8 +39,8 @@ export function TeamMembersTab({ project }: { project: Project }) {
   return (
     <div className="max-w-xl">
       {isOwningBranchRep && (
-        <div className="mb-4 flex items-center gap-2">
-          <select className={selectCls} value={selected} onChange={(e) => setSelected(e.target.value)}>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <select className={`${selectCls} w-full sm:w-auto`} value={selected} onChange={(e) => setSelected(e.target.value)}>
             <option value="">Select a persona&hellip;</option>
             {available.map((p) => (
               <option key={p.id} value={p.id}>

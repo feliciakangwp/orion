@@ -62,15 +62,15 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
   }
 
   return (
-    <Card className="max-w-3xl p-6">
-      <div className="grid grid-cols-2 gap-5">
+    <Card className="max-w-3xl p-4 sm:p-6">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <Field label="Status">
           <div>
             <StatusBadge status={project.status} />
           </div>
         </Field>
 
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <Field label="Project Title">
             <input
               className={inputCls}
@@ -80,7 +80,7 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
             />
           </Field>
         </div>
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <Field label="Justification of Expenditure">
             <textarea
               className={textareaCls}
@@ -90,7 +90,7 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
             />
           </Field>
         </div>
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <Field label="Additional Comments" hint="Optional">
             <textarea
               className={textareaCls}
@@ -144,7 +144,7 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
 
       {error && <div className="mt-4 text-sm text-rose-600">{error}</div>}
 
-      <div className="mt-6 flex items-center gap-2 border-t border-slate-100 pt-4">
+      <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
         {dirty && (branchRepEditable || financeEditable) && (
           <Button onClick={save} disabled={saving}>
             {saving ? 'Saving…' : 'Save Changes'}

@@ -27,8 +27,8 @@ export function ProjectProfileList() {
         {canCreate && <Button onClick={() => setShowNew(true)}>+ New</Button>}
       </div>
 
-      <Card className="overflow-hidden">
-        <table className="w-full text-left text-sm">
+      <Card className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Project Title</th>

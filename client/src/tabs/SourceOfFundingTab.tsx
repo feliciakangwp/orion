@@ -91,8 +91,8 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
   return (
     <div>
       {isOwningBranchRep && (
-        <div className="mb-4 flex items-center gap-2">
-          <select className={`${selectCls} w-48`} value={newSource} onChange={(e) => setNewSource(e.target.value as FundingSource)}>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <select className={`${selectCls} w-full sm:w-48`} value={newSource} onChange={(e) => setNewSource(e.target.value as FundingSource)}>
             {ALL_SOURCES.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -104,8 +104,8 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
       )}
       {error && <div className="mb-3 text-sm text-rose-600">{error}</div>}
 
-      <Card className="overflow-hidden">
-        <table className="w-full text-left text-sm">
+      <Card className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Funding Pot ID</th>

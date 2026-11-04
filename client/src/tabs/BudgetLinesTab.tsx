@@ -359,13 +359,13 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-slate-700">
           {KIND_LABEL[kind]} &middot; {periodSpan(kind)} {kind === 'RB' || kind === 'OB' ? 'months' : 'years'} from{' '}
           {kind === 'RB' || kind === 'OB' ? 'Apr' : keys[0]}
         </h2>
         {isOwningBranchRep && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={addCarriedForward}>
               + Pull Forward (Draft)
             </Button>
@@ -373,6 +373,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
           </div>
         )}
       </div>
+      <p className="mb-2 text-xs text-slate-400 sm:hidden">Swipe the table sideways to see more columns.</p>
 
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[1800px] text-left text-sm">

@@ -26,8 +26,8 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 shadow-xl sm:p-6">
         <h2 className="text-lg font-semibold text-slate-800">New Project Profile</h2>
         <p className="mt-1 text-sm text-slate-500">
           Starts in <span className="font-medium">Draft</span> status. You can complete the remaining details after creation.

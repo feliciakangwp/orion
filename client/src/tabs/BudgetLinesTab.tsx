@@ -3,7 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, Card, currency, StatusBadge } from '../components/ui';
 import { periodKeys, periodSpan } from '../lib/calc';
-import { canApprove, canSubmit, isEditableByBranchRep, isFinanceOrFinanceAdmin, userCanAct } from '../lib/workflow';
+import { canApprove, canSubmit, isEditableByBranchRep, isFinanceOrFinanceAdmin, isOwningBranchRep, userCanAct } from '../lib/workflow';
 import type { BudgetKind, BudgetLine, FundingEntry, FundingSource, Project, User } from '../types';
 
 const KIND_LABEL: Record<BudgetKind, string> = {
@@ -34,9 +34,8 @@ function BudgetLineRow({
 }) {
   const { currentUser, users, simulationYear } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const isOwningBranchRep =
-    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
-  const editable = isOwningBranchRep && isEditableByBranchRep(line.step);
+  const isBranchRepOwner = !!currentUser && isOwningBranchRep(currentUser, project);
+  const editable = isBranchRepOwner && isEditableByBranchRep(line.step);
   const canAct = currentUser ? userCanAct(line, currentUser, project) : false;
   const showItFields = line.itProject === 'Yes';
 
@@ -299,7 +298,7 @@ function BudgetLineRow({
       </td>
       <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-2 py-2">
         <div className="flex flex-col gap-1">
-          {isOwningBranchRep && canSubmit(line.step) && (
+          {isBranchRepOwner && canSubmit(line.step) && (
             <Button className="!px-2 !py-1 text-xs" onClick={submit}>
               Submit
             </Button>
@@ -314,7 +313,7 @@ function BudgetLineRow({
               Return
             </Button>
           )}
-          {isOwningBranchRep && line.step === 'BRANCH_REP_DRAFT' && (
+          {isBranchRepOwner && line.step === 'BRANCH_REP_DRAFT' && (
             <Button className="!px-2 !py-1 text-xs" variant="danger" onClick={remove}>
               Delete
             </Button>
@@ -341,8 +340,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
   // rather than leaving the previous user's view on screen.
   useEffect(reload, [project.id, kind, currentUser?.id]);
 
-  const isOwningBranchRep =
-    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
+  const isBranchRepOwner = !!currentUser && isOwningBranchRep(currentUser, project);
   const isFinance = !!currentUser && isFinanceOrFinanceAdmin(currentUser);
 
   // MTE/Block period keys follow the global Simulation Year (top bar) rather
@@ -374,7 +372,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
           {KIND_LABEL[kind]} &middot; {periodSpan(kind)} {kind === 'RB' || kind === 'OB' ? 'months' : 'years'} from{' '}
           {kind === 'RB' || kind === 'OB' ? 'Apr' : keys[0]}
         </h2>
-        {isOwningBranchRep && (
+        {isBranchRepOwner && (
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={addCarriedForward}>
               + Pull Forward (Draft)

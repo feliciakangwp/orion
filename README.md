@@ -41,6 +41,19 @@ There's no concept of a fixed "persona" or department anymore. Instead:
   can review any project, a Finance Officer/Finance Manager dropdown shows
   every user in either group, etc. (This was an explicit decision when
   rebuilding this on top of the earlier department-scoped persona model.)
+- **Super Admin is an unconditional override**: a Super Admin user can do
+  anything any other group can do, anywhere in the app — see every project
+  and every budget line regardless of tagging or team membership, edit and
+  submit a project they didn't create, approve/reject it as if Finance,
+  act as any reviewer/approver/finance step on any budget line, and reach
+  Finance Admin and IT Admin regardless of holding those specific groups.
+  This is folded directly into the shared permission functions in
+  `client/src/lib/workflow.ts` (`isOwningBranchRep`, `isFinance`,
+  `userCanAct`, `canSeeLine`, etc.) rather than checked ad hoc, so nothing
+  can end up accidentally gating Super Admin out. It does **not** add Super
+  Admin to selection dropdowns (e.g. a budget line's Reviewer 1 list is
+  still just DY Head/Head users) — it grants the ability to act in those
+  roles, not membership in them.
 - IT Admin → User Management (Super-Admin-only) is where Users are created
   and their groups/status edited.
 - The app seeds one starter User per group (named after the group, e.g.

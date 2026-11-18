@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, Card, Field, inputCls, selectCls, StatusBadge, textareaCls } from '../components/ui';
+import { isFinance as isFinanceUser, isOwningBranchRep } from '../lib/workflow';
 import type { Project } from '../types';
 
 export function DetailsTab({ project, onChange }: { project: Project; onChange: () => void }) {
@@ -12,11 +13,10 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
 
   useEffect(() => setForm(project), [project]);
 
-  const isOwningBranchRep =
-    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
-  const isFinance = !!currentUser && (currentUser.groups.includes('Finance Officer') || currentUser.groups.includes('Finance Manager'));
+  const branchRepOwner = !!currentUser && isOwningBranchRep(currentUser, project);
+  const isFinance = !!currentUser && isFinanceUser(currentUser);
   const editableStatus = project.status === 'Draft' || project.status === 'Rejected';
-  const branchRepEditable = isOwningBranchRep && editableStatus;
+  const branchRepEditable = branchRepOwner && editableStatus;
   const financeEditable = isFinance && project.status === 'Request to Create';
   // Finance Officer dropdown includes everyone in either the Finance Officer
   // or Finance Manager group, not scoped to a department.
@@ -170,7 +170,7 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
             {saving ? 'Saving…' : 'Save Changes'}
           </Button>
         )}
-        {isOwningBranchRep && editableStatus && (
+        {branchRepOwner && editableStatus && (
           <Button variant="secondary" onClick={submitRequest}>
             {project.status === 'Rejected' ? 'Resubmit Request to Create' : 'Submit Request to Create'}
           </Button>

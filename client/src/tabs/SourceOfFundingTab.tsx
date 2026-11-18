@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, Card, selectCls, StatusBadge } from '../components/ui';
+import { isFinanceOrFinanceAdmin, isOwningBranchRep as isOwningBranchRepUser } from '../lib/workflow';
 import type { FundingEntry, FundingSource, Project } from '../types';
 
 function PromoteCell({
@@ -64,13 +65,8 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
   }
   useEffect(reload, [project.id]);
 
-  const isOwningBranchRep =
-    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
-  const isFinanceActor =
-    !!currentUser &&
-    (currentUser.groups.includes('Finance Officer') ||
-      currentUser.groups.includes('Finance Manager') ||
-      currentUser.groups.includes('Finance Admin'));
+  const isOwningBranchRep = !!currentUser && isOwningBranchRepUser(currentUser, project);
+  const isFinanceActor = !!currentUser && isFinanceOrFinanceAdmin(currentUser);
 
   const sourceOf = (id: string) => catalog.find((c) => c.id === id);
   // Branch Reps may only pick Pipeline, Active catalog entries; Finance picks

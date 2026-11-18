@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
+import { isSuperAdmin } from '../lib/workflow';
 import { resetDb } from '../local/db';
 
 function UserImpersonationSwitcher() {
@@ -86,9 +87,8 @@ function NavHeader({ children }: { children: ReactNode }) {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { currentUser } = useAuth();
-  const groups = currentUser?.groups ?? [];
-  const isFinanceAdmin = groups.includes('Finance Admin');
-  const isSuperAdmin = groups.includes('Super Admin');
+  const superAdmin = !!currentUser && isSuperAdmin(currentUser);
+  const isFinanceAdmin = superAdmin || (currentUser?.groups.includes('Finance Admin') ?? false);
 
   return (
     <>
@@ -108,7 +108,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           </>
         )}
 
-        {isSuperAdmin && (
+        {superAdmin && (
           <>
             <NavHeader>IT Admin</NavHeader>
             <NavItem to="/it-admin/users" onNavigate={onNavigate}>

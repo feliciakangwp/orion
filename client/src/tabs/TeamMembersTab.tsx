@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, Card, inputCls } from '../components/ui';
+import { isOwningBranchRep as isOwningBranchRepUser } from '../lib/workflow';
 import type { Project, TeamMember, User } from '../types';
 
 function AddTeamMembersModal({
@@ -98,8 +99,7 @@ export function TeamMembersTab({ project }: { project: Project }) {
   }
   useEffect(reload, [project.id]);
 
-  const isOwningBranchRep =
-    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
+  const isOwningBranchRep = !!currentUser && isOwningBranchRepUser(currentUser, project);
   const userOf = (id: string): User | undefined => users.find((u) => u.id === id);
 
   async function remove(id: string) {

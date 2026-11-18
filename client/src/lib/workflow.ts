@@ -73,8 +73,16 @@ export function inGroup(user: Pick<User, 'groups'>, group: Group): boolean {
   return user.groups.includes(group);
 }
 
+// Super Admin can do anything anyone else can do, anywhere in the app — it's
+// an unconditional override, folded directly into every permission
+// predicate below rather than checked ad hoc at each call site, so nothing
+// can accidentally end up gating Super Admin out.
+export function isSuperAdmin(user: Pick<User, 'groups'>): boolean {
+  return inGroup(user, 'Super Admin');
+}
+
 export function isFinance(user: Pick<User, 'groups'>): boolean {
-  return inGroup(user, 'Finance Officer') || inGroup(user, 'Finance Manager');
+  return isSuperAdmin(user) || inGroup(user, 'Finance Officer') || inGroup(user, 'Finance Manager');
 }
 
 // Finance Admin is treated as able to act anywhere Finance can for budget
@@ -84,7 +92,19 @@ export function isFinanceOrFinanceAdmin(user: Pick<User, 'groups'>): boolean {
   return isFinance(user) || inGroup(user, 'Finance Admin');
 }
 
-function isOwningBranchRep(user: Pick<User, 'id' | 'groups'>, project: { openedByUserId: string }): boolean {
+export function canCreateProject(user: Pick<User, 'groups'>): boolean {
+  return isSuperAdmin(user) || inGroup(user, 'Branch Rep');
+}
+
+export function canManageFundingCatalog(user: Pick<User, 'groups'>): boolean {
+  return isSuperAdmin(user) || inGroup(user, 'Finance Admin');
+}
+
+// Whether `user` can act as the owning Branch Rep on `project` — either
+// they're a Super Admin (who can act as anyone, on anything), or they're
+// the exact user who created it and still hold the Branch Rep group.
+export function isOwningBranchRep(user: Pick<User, 'id' | 'groups'>, project: { openedByUserId: string }): boolean {
+  if (isSuperAdmin(user)) return true;
   return user.id === project.openedByUserId && inGroup(user, 'Branch Rep');
 }
 
@@ -94,8 +114,9 @@ type ActableLine = Pick<BudgetLine, 'step' | 'reviewer1UserId' | 'reviewer2UserI
 // role for this budget line right now. There is no department scoping:
 // Reviewer1/Reviewer2/Approver are exact-user matches (whoever was picked
 // into that slot); Finance Officer/Finance Manager match by group, project
-// (and department) agnostic.
+// (and department) agnostic. Super Admin can act as any of these.
 export function userCanAct(line: ActableLine, user: User, project: { openedByUserId: string }): boolean {
+  if (isSuperAdmin(user)) return true;
   const role = STEP_ACTOR[line.step];
   if (!role) return false;
   switch (role) {
@@ -116,17 +137,15 @@ export function userCanAct(line: ActableLine, user: User, project: { openedByUse
   }
 }
 
-export { isOwningBranchRep };
-
 type TaggableLine = Pick<
   BudgetLine,
   'assignedToUserId' | 'reviewer1UserId' | 'reviewer2UserId' | 'approverUserId' | 'financeOfficerUserId'
 >;
 
-// Line-level visibility: Finance (Officer/Manager/Admin) sees every line.
-// Everyone else only sees a line if they're tagged on it somewhere
-// (creator, reviewer, approver, or finance officer) or they're a team
-// member of the project.
+// Line-level visibility: Finance (Officer/Manager/Admin) and Super Admin see
+// every line. Everyone else only sees a line if they're tagged on it
+// somewhere (creator, reviewer, approver, or finance officer) or they're a
+// team member of the project.
 export function canSeeLine(line: TaggableLine, user: User, teamMemberUserIds: readonly string[]): boolean {
   if (isFinanceOrFinanceAdmin(user)) return true;
   const taggedIds = [

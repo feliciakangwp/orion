@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { NewProjectModal } from '../components/NewProjectModal';
 import { Button, Card, StatusBadge } from '../components/ui';
+import { canCreateProject } from '../lib/workflow';
 import type { Project } from '../types';
 
 export function ProjectProfileList() {
@@ -17,7 +18,7 @@ export function ProjectProfileList() {
   }
   useEffect(reload, []);
 
-  const canCreate = currentUser?.groups.includes('Branch Rep') ?? false;
+  const canCreate = !!currentUser && canCreateProject(currentUser);
   const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? id;
 
   return (

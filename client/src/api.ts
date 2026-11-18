@@ -9,13 +9,15 @@ import { getDb, nextId, saveDb, type StoredBudgetLine } from './local/db';
 import { applyRecurringInflation, emptyPeriods, periodKeys, sumPeriods } from './lib/calc';
 import {
   canApprove,
+  canCreateProject,
+  canManageFundingCatalog,
   canSeeLine,
   canSubmit,
-  inGroup,
   isEditableByBranchRep,
   isFinance,
   isFinanceOrFinanceAdmin,
   isOwningBranchRep,
+  isSuperAdmin,
   nextOnApprove,
   nextOnSubmit,
   statusFor,
@@ -93,21 +95,25 @@ export const api = {
     list: () => run(() => getDb().users),
     create: (data: { name: string; groups: Group[]; status?: 'Active' | 'Inactive' }) =>
       run(() => {
+        const user = requireUser();
+        if (!isSuperAdmin(user)) throw new Error('Only Super Admin can add a user');
         if (!data.name.trim()) throw new Error('Name is required');
         if (data.groups.length === 0) throw new Error('Select at least one group');
-        const user: User = {
+        const newUser: User = {
           id: nextId('user'),
           name: data.name.trim(),
           groups: data.groups,
           status: data.status ?? 'Active',
           createdAt: now(),
         };
-        getDb().users.push(user);
+        getDb().users.push(newUser);
         saveDb();
-        return user;
+        return newUser;
       }),
     update: (id: string, data: Partial<Pick<User, 'name' | 'groups' | 'status'>>) =>
       run(() => {
+        const actor = requireUser();
+        if (!isSuperAdmin(actor)) throw new Error('Only Super Admin can edit a user');
         const db = getDb();
         const user = db.users.find((u) => u.id === id);
         if (!user) throw new Error('Not found');
@@ -127,7 +133,7 @@ export const api = {
     create: (data: Pick<FundingSource, 'name' | 'maturity' | 'category'>) =>
       run(() => {
         const user = requireUser();
-        if (!inGroup(user, 'Finance Admin')) throw new Error('Only Finance Admin can add a Source of Funding');
+        if (!canManageFundingCatalog(user)) throw new Error('Only Finance Admin can add a Source of Funding');
         if (!data.name.trim()) throw new Error('Source of Fund name is required');
         const source: FundingSource = {
           id: nextId('fundsrc'),
@@ -144,7 +150,7 @@ export const api = {
     setStatus: (id: string, status: FundingSource['status']) =>
       run(() => {
         const user = requireUser();
-        if (!inGroup(user, 'Finance Admin')) throw new Error('Only Finance Admin can change a Source of Funding');
+        if (!canManageFundingCatalog(user)) throw new Error('Only Finance Admin can change a Source of Funding');
         const db = getDb();
         const source = db.fundingSources.find((f) => f.id === id);
         if (!source) throw new Error('Not found');
@@ -160,7 +166,7 @@ export const api = {
     create: (data: { title: string; justification: string; additionalComments?: string }) =>
       run(() => {
         const user = requireUser();
-        if (!inGroup(user, 'Branch Rep')) throw new Error('Only a Branch Rep can create a project');
+        if (!canCreateProject(user)) throw new Error('Only a Branch Rep can create a project');
         if (!data.title || !data.justification) {
           throw new Error('Project Title and Justification of Expenditure are required');
         }

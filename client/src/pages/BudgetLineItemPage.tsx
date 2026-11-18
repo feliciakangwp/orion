@@ -2,17 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { BudgetLineRow } from '../components/BudgetLineRow';
-import { Button, Card } from '../components/ui';
+import { Button, Card, StatusBadge } from '../components/ui';
+import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus } from '../lib/budgetPeriod';
 import { periodKeys } from '../lib/calc';
 import { canCreateProject, isOwningBranchRep } from '../lib/workflow';
-import type { AccountCode, BudgetLine, CostCentreCode, FundingEntry, FundingSource, Project } from '../types';
+import type { AccountCode, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, Project } from '../types';
 
 // Medium Term Projection > Budget Line Item: every MTP-kind line the acting
 // user can see, across every Project Profile plus any ad hoc line that
 // isn't tied to one at all. Attaching a Project Title here is the same
 // underlying record as a project's own MTP tab, so it shows up there too.
 export function BudgetLineItemPage() {
-  const { currentUser, simulationYear } = useAuth();
+  const { currentUser, simulationYear, simulationDate } = useAuth();
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [teamProjectIds, setTeamProjectIds] = useState<Set<string>>(new Set());
@@ -20,6 +21,7 @@ export function BudgetLineItemPage() {
   const [catalog, setCatalog] = useState<FundingSource[]>([]);
   const [accountCodes, setAccountCodes] = useState<AccountCode[]>([]);
   const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
+  const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
 
   function reload() {
     api.budgetLines.listAllMtp().then(setLines);
@@ -31,8 +33,13 @@ export function BudgetLineItemPage() {
     api.fundingCatalog.list().then(setCatalog);
     api.accountCodes.list().then(setAccountCodes);
     api.costCentres.list().then(setCostCentres);
+    api.budgetPeriods.list().then(setBudgetPeriods);
   }
   useEffect(reload, [currentUser?.id]);
+
+  const budgetPeriod = budgetPeriods.find((p) => p.type === 'MTP');
+  const periodStatus = budgetPeriod ? effectiveBudgetPeriodStatus(budgetPeriod, simulationDate) : 'Draft';
+  const periodEditable = !!currentUser && canActOnBudgetPeriod(periodStatus, currentUser);
 
   const projectOf = (id: string | null) => (id ? projects.find((p) => p.id === id) ?? null : null);
 
@@ -65,9 +72,23 @@ export function BudgetLineItemPage() {
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold text-slate-800">Budget Line Item</h1>
-        {canAdd && <Button onClick={addNew}>+ Add</Button>}
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-semibold text-slate-800">Budget Line Item</h1>
+          {budgetPeriod && budgetPeriod.status !== 'Draft' && <StatusBadge status={periodStatus} />}
+        </div>
+        {canAdd && (
+          <Button onClick={addNew} disabled={!periodEditable}>
+            + Add
+          </Button>
+        )}
       </div>
+      {!periodEditable && (
+        <p className="mb-2 text-xs text-rose-600">
+          {periodStatus === 'Closed and Locked'
+            ? "Medium Term Projection is Closed and Locked by Finance Admin — no edits until it's reopened."
+            : 'Medium Term Projection is Closed for Submission — only Finance Officer/Finance Manager can still edit.'}
+        </p>
+      )}
       <p className="mb-2 text-xs text-slate-400 sm:hidden">Swipe the table sideways to see more columns.</p>
       <p className="mb-3 text-xs text-slate-400">
         Every Medium Term Projection line across all Project Profiles, plus ad hoc lines with no Project Profile. Set a
@@ -119,6 +140,7 @@ export function BudgetLineItemPage() {
                 keys={keys}
                 projectTitleEditable
                 teamProjects={teamProjects}
+                periodEditable={periodEditable}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
                 onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}

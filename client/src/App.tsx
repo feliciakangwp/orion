@@ -3,6 +3,7 @@ import { useAuth } from './AuthContext';
 import { Layout } from './components/Layout';
 import { BudgetLineItemPage } from './pages/BudgetLineItemPage';
 import { FinanceAdminAccountPage } from './pages/FinanceAdminAccountPage';
+import { FinanceAdminBudgetPeriodPage } from './pages/FinanceAdminBudgetPeriodPage';
 import { FinanceAdminCostCentrePage } from './pages/FinanceAdminCostCentrePage';
 import { FinanceAdminFundingPage } from './pages/FinanceAdminFundingPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/finance-admin/funding" element={<FinanceAdminFundingPage />} />
         <Route path="/finance-admin/account" element={<FinanceAdminAccountPage />} />
         <Route path="/finance-admin/cost-centre" element={<FinanceAdminCostCentrePage />} />
+        <Route path="/finance-admin/budget-period" element={<FinanceAdminBudgetPeriodPage />} />
         <Route path="/it-admin/users" element={<UserManagementPage />} />
         <Route path="*" element={<Navigate to="/projects" replace />} />
       </Routes>

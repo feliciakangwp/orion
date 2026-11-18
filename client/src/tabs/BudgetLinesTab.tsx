@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { BudgetLineRow } from '../components/BudgetLineRow';
-import { Button, Card } from '../components/ui';
+import { Button, Card, StatusBadge } from '../components/ui';
+import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind } from '../lib/budgetPeriod';
 import { periodKeys, periodSpan } from '../lib/calc';
 import { isFinanceOrFinanceAdmin, isOwningBranchRep } from '../lib/workflow';
-import type { AccountCode, BudgetKind, BudgetLine, CostCentreCode, FundingEntry, FundingSource, Project } from '../types';
+import type { AccountCode, BudgetKind, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, Project } from '../types';
 
 const KIND_LABEL: Record<BudgetKind, string> = {
   MTP: 'MTP',
@@ -15,12 +16,13 @@ const KIND_LABEL: Record<BudgetKind, string> = {
 };
 
 export function BudgetLinesTab({ project, kind }: { project: Project; kind: BudgetKind }) {
-  const { currentUser, simulationYear } = useAuth();
+  const { currentUser, simulationYear, simulationDate } = useAuth();
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [fundingEntries, setFundingEntries] = useState<FundingEntry[]>([]);
   const [catalog, setCatalog] = useState<FundingSource[]>([]);
   const [accountCodes, setAccountCodes] = useState<AccountCode[]>([]);
   const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
+  const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
 
   function reload() {
     api.budgetLines.list(project.id, kind).then(setLines);
@@ -28,6 +30,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
     api.fundingCatalog.list().then(setCatalog);
     api.accountCodes.list().then(setAccountCodes);
     api.costCentres.list().then(setCostCentres);
+    api.budgetPeriods.list().then(setBudgetPeriods);
   }
   // Re-fetch on user change too: which lines are visible depends on who's
   // acting (see canSeeLine), so switching users must refresh the list
@@ -36,6 +39,10 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
 
   const isBranchRepOwner = !!currentUser && isOwningBranchRep(currentUser, project);
   const isFinance = !!currentUser && isFinanceOrFinanceAdmin(currentUser);
+
+  const budgetPeriod = budgetPeriods.find((p) => p.type === exerciseTypeForKind(kind));
+  const periodStatus = budgetPeriod ? effectiveBudgetPeriodStatus(budgetPeriod, simulationDate) : 'Draft';
+  const periodEditable = !!currentUser && canActOnBudgetPeriod(periodStatus, currentUser);
 
   // MTP/Block period keys follow the global Simulation Year (top bar) rather
   // than a per-project setting, so every project is compared on the same FY
@@ -58,12 +65,26 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-slate-700">
-          {KIND_LABEL[kind]} &middot; {periodSpan(kind)} {kind === 'RB' || kind === 'OB' ? 'months' : 'years'} from{' '}
-          {kind === 'RB' || kind === 'OB' ? 'Apr' : keys[0]}
-        </h2>
-        {isBranchRepOwner && <Button onClick={addNew}>+ New</Button>}
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-base font-semibold text-slate-700">
+            {KIND_LABEL[kind]} &middot; {periodSpan(kind)} {kind === 'RB' || kind === 'OB' ? 'months' : 'years'} from{' '}
+            {kind === 'RB' || kind === 'OB' ? 'Apr' : keys[0]}
+          </h2>
+          {budgetPeriod && budgetPeriod.status !== 'Draft' && <StatusBadge status={periodStatus} />}
+        </div>
+        {isBranchRepOwner && (
+          <Button onClick={addNew} disabled={!periodEditable}>
+            + New
+          </Button>
+        )}
       </div>
+      {!periodEditable && (
+        <p className="mb-2 text-xs text-rose-600">
+          {periodStatus === 'Closed and Locked'
+            ? `${KIND_LABEL[kind]} is Closed and Locked by Finance Admin — no edits until it's reopened.`
+            : `${KIND_LABEL[kind]} is Closed for Submission — only Finance Officer/Finance Manager can still edit.`}
+        </p>
+      )}
       <p className="mb-2 text-xs text-slate-400 sm:hidden">Swipe the table sideways to see more columns.</p>
 
       <Card className="overflow-x-auto">
@@ -109,6 +130,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
                 accountCodes={accountCodes}
                 costCentres={costCentres}
                 keys={keys}
+                periodEditable={periodEditable}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
                 onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}

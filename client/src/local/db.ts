@@ -1,7 +1,9 @@
-import { GROUPS } from '../types';
+import { BUDGET_EXERCISE_TYPES, GROUPS } from '../types';
 import type {
   AccountCode,
+  BudgetExerciseType,
   BudgetLine,
+  BudgetPeriod,
   CostCentreCode,
   FundingEntry,
   FundingSource,
@@ -24,14 +26,14 @@ export interface DbShape {
   fundingEntries: FundingEntry[];
   budgetLines: StoredBudgetLine[];
   teamMembers: TeamMember[];
+  budgetPeriods: BudgetPeriod[];
   seq: number;
 }
 
-// Bumped again from orion.db.v2: new fields/entities (User.email, Account
-// and Cost Centre catalogs, nullable BudgetLine.projectId for ad hoc MTP
-// lines) — this is a clean slate with a different shape, so old data is
+// Bumped again from orion.db.v3: new entity (BudgetPeriod, one per budget
+// exercise) — this is a clean slate with a different shape, so old data is
 // simply left behind under its old key rather than migrated.
-const STORAGE_KEY = 'orion.db.v3';
+const STORAGE_KEY = 'orion.db.v4';
 
 function buildSeedUsers(): User[] {
   const now = new Date().toISOString();
@@ -77,6 +79,18 @@ function buildSeedCostCentres(): CostCentreCode[] {
   return [{ id: 'cc_1', code: '998019', description: 'Minor Development Project', createdAt: now }];
 }
 
+function buildSeedBudgetPeriods(): BudgetPeriod[] {
+  const now = new Date().toISOString();
+  return (BUDGET_EXERCISE_TYPES as readonly BudgetExerciseType[]).map((type) => ({
+    id: `budgetperiod_${type}`,
+    type,
+    status: 'Draft',
+    startDate: null,
+    endDate: null,
+    updatedAt: now,
+  }));
+}
+
 function emptyDb(): DbShape {
   return {
     users: buildSeedUsers(),
@@ -87,6 +101,7 @@ function emptyDb(): DbShape {
     fundingEntries: [],
     budgetLines: [],
     teamMembers: [],
+    budgetPeriods: buildSeedBudgetPeriods(),
     seq: 1,
   };
 }

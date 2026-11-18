@@ -23,6 +23,7 @@ export function BudgetLineRow({
   keys,
   projectTitleEditable,
   teamProjects,
+  periodEditable,
   onLocalEdit,
   onServerUpdate,
   onRemoved,
@@ -40,6 +41,12 @@ export function BudgetLineRow({
   // line be attached to / detached from a Project Profile.
   projectTitleEditable?: boolean;
   teamProjects?: Project[];
+  // Whether this line's budget exercise (Budget Period, Finance Admin)
+  // currently lets the acting user edit/submit/approve it at all — Closed
+  // for Submission restricts this to Finance, Closed and Locked to nobody
+  // but Super Admin. Computed by the parent, since it's the same check for
+  // every row of a given kind.
+  periodEditable: boolean;
   onLocalEdit: (line: BudgetLine) => void;
   onServerUpdate: (line: BudgetLine) => void;
   onRemoved: (id: string) => void;
@@ -49,8 +56,8 @@ export function BudgetLineRow({
   const [error, setError] = useState<string | null>(null);
   const owner = ownerOf(line, project);
   const isBranchRepOwner = !!currentUser && isOwningBranchRep(currentUser, owner);
-  const editable = isBranchRepOwner && isEditableByBranchRep(line.step);
-  const canAct = currentUser ? userCanAct(line, currentUser, owner) : false;
+  const editable = isBranchRepOwner && isEditableByBranchRep(line.step) && periodEditable;
+  const canAct = (currentUser ? userCanAct(line, currentUser, owner) : false) && periodEditable;
   const showItFields = line.itProject === 'Yes';
 
   // No department scoping: every user with the matching group is eligible.
@@ -355,7 +362,7 @@ export function BudgetLineRow({
       </td>
       <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-2 py-2">
         <div className="flex flex-col gap-1">
-          {isBranchRepOwner && canSubmit(line.step) && (
+          {isBranchRepOwner && periodEditable && canSubmit(line.step) && (
             <Button className="!px-2 !py-1 text-xs" onClick={submit}>
               Submit
             </Button>
@@ -370,7 +377,7 @@ export function BudgetLineRow({
               Return
             </Button>
           )}
-          {isBranchRepOwner && line.step === 'BRANCH_REP_DRAFT' && (
+          {isBranchRepOwner && periodEditable && line.step === 'BRANCH_REP_DRAFT' && (
             <Button className="!px-2 !py-1 text-xs" variant="danger" onClick={remove}>
               Delete
             </Button>

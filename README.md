@@ -66,7 +66,7 @@ There's no concept of a fixed "persona" or department anymore. Instead:
 Because this deploys as a static site (GitHub Pages), there is nowhere to
 run a shared backend. All users, projects, funding entries, budget lines,
 etc. are stored in **that browser's `localStorage`**, under the key
-`orion.db.v3`. Practically:
+`orion.db.v4`. Practically:
 
 - Data is private to one browser on one device — it is **not shared**
   between different people or different devices. Impersonating different
@@ -92,8 +92,9 @@ npm run dev
 
 Open the printed `localhost` URL. On first run the app seeds 10 Users (one
 per group, each with a placeholder `@orion.gov` email), the 8-row Source of
-Funding catalog, one Account (`511604` / ICT Consultation Services), and one
-Cost Centre (`998019` / Minor Development Project) into `localStorage`.
+Funding catalog, one Account (`511604` / ICT Consultation Services), one
+Cost Centre (`998019` / Minor Development Project), and the 3 Budget Period
+exercises (all Draft) into `localStorage`.
 
 ## Deployment (GitHub Pages)
 
@@ -143,6 +144,37 @@ so a path-based router would 404 on refresh of a deep link.)
   Finance Admin adds new entries to any of the three with **+ Add**. The
   Account and Cost Centre fields on every budget line (MTP/RB/OB/Block) are
   dropdowns populated from these two catalogs rather than free text.
+- **Finance Admin → Budget Period** manages the three budgeting exercises —
+  **Medium Term Projection** (kind MTP), **Annual Budget** (kinds RB + OB
+  together, since Original and Revised are both part of the same annual
+  cycle), and **Block Budget** (kind BLOCK) — each one a card with a
+  **Start Date**, an **End Date**, and a status: **Draft** → **Open** →
+  **Closed for Submission** (automatic, once End Date has passed) →
+  **Closed and Locked** (Finance Admin's explicit "Closed and Lock").
+  - Only one exercise can be active (non-Draft) at a time; Finance Admin
+    must **Reset to Draft** a Closed and Locked exercise before a different
+    one can be opened.
+  - Start Date locks the moment an exercise is opened; End Date stays
+    editable while Open, and locks too once it's passed (Closed for
+    Submission) or the exercise is Closed and Locked.
+  - **Opening Medium Term Projection** rolls every existing MTP line
+    forward into the new 15-year window starting at the Start Date's
+    Financial Year (e.g. opening with a Start Date in FY26 moves the
+    window from FY25–39 to FY26–40): every overlapping FY keeps its
+    existing value, the one new year at the end is auto-populated the same
+    way a recurring line always has been (5% p.a. for IT projects, 3% p.a.
+    otherwise; a non-recurring line's new year starts at 0), and every
+    line's workflow step resets to Branch Rep Draft so it can be worked
+    again for the new cycle. The global **Simulation Year** control follows
+    along to the new window automatically.
+  - While **Open**, Branch Rep/DY Head/Head/SMGT/Finance Officer/Finance
+    Manager can all edit/submit/approve lines of that exercise's kind(s) as
+    normal. Once **Closed for Submission**, only Finance Officer/Finance
+    Manager still can. Once **Closed and Locked**, no one but Super Admin
+    can — Finance Admin must **Reopen** it first (which resumes whichever
+    of Open/Closed for Submission the End Date already implies, i.e. this
+    undoes only the lock, not a submission deadline that had already
+    passed).
 - **Source of Funding** tab (inside a project) — Branch Rep clicks
   **+ Add Source of Fund**, which opens a modal with a single dropdown
   (defaulting to unselected) of **Active, Pipeline** catalog entries and an
@@ -188,7 +220,9 @@ so a path-based router would 404 on refresh of a deep link.)
   **or Admin**) is the exception and always sees every line.
 - **Simulation Date** (top bar, next to Simulation Year) is a global
   "pretend today is this date" setting with a native calendar picker and a
-  **Today** button to snap back to the real current date.
+  **Today** button to snap back to the real current date. Budget Period's
+  Closed for Submission transition is evaluated against this date, not the
+  browser's real clock, so you can test deadline behavior without waiting.
 
 ## Assumptions made where the spec was ambiguous
 
@@ -225,6 +259,28 @@ so a path-based router would 404 on refresh of a deep link.)
   of the Projects that they are a team member of" wording; the line's
   actual Branch-Rep-owned workflow afterwards follows that project's real
   Branch Rep, not whoever attached it.
+- "Annual Budget" is modeled as **one** Budget Period exercise covering
+  **both** the Revised Budget (RB) and Original Budget (OB) kinds together
+  (confirmed before building this), rather than 4 separate exercises for
+  the app's 4 budget-line kinds.
+- "Only one budget exercise open at a time" is enforced as "only one
+  non-Draft at all" (confirmed before building this) — Medium Term
+  Projection being Closed and Locked still blocks Annual Budget or Block
+  Budget from opening, not just from simultaneously being Open. Since the
+  spec gave no explicit way to retire a finished cycle and free that slot,
+  a Finance-Admin-only **Reset to Draft** action (available once a period
+  is Closed and Locked) was added for this purpose — without it, once any
+  exercise were ever opened, no other exercise could ever be opened again.
+- Reopening a Closed and Locked period returns it to **Open** internally,
+  which is then immediately redisplayed as **Closed for Submission** if its
+  End Date has already passed (confirmed before building this) — i.e.
+  Reopen undoes only the Finance Admin lock, never a submission deadline
+  that had already passed on its own.
+- Medium Term Projection's pull-forward-on-open behavior (carry over
+  overlapping FY values, auto-populate the one new year) is specific to
+  that exercise, per the spec's example — Annual Budget and Block Budget
+  opening only changes their status/dates; their existing lines are left as
+  they are, with no prior-year carry-forward.
 - Authentication is out of scope; the Impersonate dropdown stands in for
   login, and anyone can impersonate anyone (there's no login/password of any
   kind gating who can pick which User).

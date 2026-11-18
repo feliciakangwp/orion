@@ -105,6 +105,36 @@ export interface CostCentreCode {
 
 export type BudgetKind = 'MTP' | 'BLOCK' | 'RB' | 'OB';
 
+// ---------- Budget Period (Finance Admin) ----------
+// A budgeting exercise/cycle: Medium Term Projection (kind MTP), Annual
+// Budget (kinds RB + OB together — Original and Revised are both part of
+// the same annual cycle), and Block Budget (kind BLOCK). Only one of the
+// three can be active (not Draft) at a time.
+
+export const BUDGET_EXERCISE_TYPES = ['MTP', 'ANNUAL', 'BLOCK'] as const;
+export type BudgetExerciseType = (typeof BUDGET_EXERCISE_TYPES)[number];
+
+// Stored state machine: Draft (never opened, dates still editable) -> Open
+// (Finance Admin opened it; start date now locked) -> Locked (Finance Admin
+// explicitly "Closed and Lock"). "Closed for Submission" is not its own
+// stored state — it's the Open state once `endDate` has passed (see
+// `effectiveBudgetPeriodStatus` in lib/budgetPeriod.ts), so reopening a
+// Locked period naturally lands back in whichever of Open/Closed for
+// Submission the date already implies.
+export type BudgetPeriodStoredStatus = 'Draft' | 'Open' | 'Locked';
+
+// The four states shown in the UI and used for permission checks.
+export type BudgetPeriodStatus = 'Draft' | 'Open' | 'Closed for Submission' | 'Closed and Locked';
+
+export interface BudgetPeriod {
+  id: string;
+  type: BudgetExerciseType;
+  status: BudgetPeriodStoredStatus;
+  startDate: string | null;
+  endDate: string | null;
+  updatedAt: string;
+}
+
 export type WorkflowStep =
   | 'BRANCH_REP_DRAFT'
   | 'REVIEWER1_R1'

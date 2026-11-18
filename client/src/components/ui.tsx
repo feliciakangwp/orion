@@ -14,6 +14,9 @@ const STATUS_COLORS: Record<string, string> = {
   'Ready for Approval': 'bg-violet-100 text-violet-800',
   'Pending Approval': 'bg-amber-100 text-amber-800',
   'Fin Supported': 'bg-emerald-100 text-emerald-800',
+  Open: 'bg-emerald-100 text-emerald-800',
+  'Closed for Submission': 'bg-amber-100 text-amber-800',
+  'Closed and Locked': 'bg-rose-100 text-rose-800',
 };
 
 export function StatusBadge({ status }: { status: string }) {

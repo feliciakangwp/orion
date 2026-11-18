@@ -12,6 +12,17 @@ function fyKey(year: number): string {
   return `FY${String(year % 100).padStart(2, '0')}`;
 }
 
+// Every Financial Year runs April to March: FYn starts 1 Apr of calendar
+// year n and ends 31 Mar of calendar year n+1 (matching fyKey(year) above,
+// where the first MTP/Block period column is labelled directly from the
+// window's starting calendar year with no +1 offset).
+export function fyOfDate(dateStr: string): number {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const year = d.getFullYear();
+  const month = d.getMonth(); // 0 = Jan
+  return month >= 3 ? year : year - 1;
+}
+
 export function periodKeys(kind: BudgetKind, simulationYear: number): string[] {
   if (kind === 'RB' || kind === 'OB') return MONTH_KEYS;
   const span = periodSpan(kind);

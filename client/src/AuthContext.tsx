@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, setApiUser } from './api';
+import { api, setApiSimDate, setApiUser } from './api';
 import type { User } from './types';
 
 function todayISO(): string {
@@ -53,8 +53,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return stored;
   });
   const [simulationYear, setSimulationYearState] = useState<number>(readStoredYear);
-  const [simulationDate, setSimulationDateState] = useState<string>(readStoredDate);
+  // Synced into the api module synchronously, same reasoning as
+  // currentUserId above: budget-period gating in api.ts reads this date,
+  // so a consumer that re-fetches on date change must never see a stale
+  // value from a useEffect that hasn't fired yet.
+  const [simulationDate, setSimulationDateRaw] = useState<string>(() => {
+    const d = readStoredDate();
+    setApiSimDate(d);
+    return d;
+  });
   const [loading, setLoading] = useState(true);
+
+  function setSimulationDate(date: string) {
+    setApiSimDate(date);
+    setSimulationDateRaw(date);
+  }
 
   function setCurrentUserId(id: string) {
     setApiUser(id);
@@ -98,8 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         simulationYear,
         setSimulationYear: setSimulationYearState,
         simulationDate,
-        setSimulationDate: setSimulationDateState,
-        resetSimulationDateToToday: () => setSimulationDateState(todayISO()),
+        setSimulationDate,
+        resetSimulationDateToToday: () => setSimulationDate(todayISO()),
       }}
     >
       {children}

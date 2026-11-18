@@ -6,7 +6,8 @@
 // AuthContext.tsx), the same way a real server would enforce it against a
 // logged-in session.
 import { getDb, nextId, saveDb, type StoredBudgetLine } from './local/db';
-import { applyRecurringInflation, emptyPeriods, periodKeys, sumPeriods } from './lib/calc';
+import { applyRecurringInflation, emptyPeriods, fyOfDate, periodKeys, sumPeriods } from './lib/calc';
+import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind, EXERCISE_LABEL } from './lib/budgetPeriod';
 import {
   canApprove,
   canCreateProject,
@@ -25,8 +26,10 @@ import {
 } from './lib/workflow';
 import type {
   AccountCode,
+  BudgetExerciseType,
   BudgetKind,
   BudgetLine,
+  BudgetPeriod,
   CostCentreCode,
   FundingEntry,
   FundingSource,
@@ -42,6 +45,16 @@ let currentUserId: string | null = null;
 
 export function setApiUser(id: string | null) {
   currentUserId = id;
+}
+
+// The global "pretend today is this date" setting (top bar) — budget period
+// gating (Closed for Submission / Closed and Locked) is evaluated against
+// this rather than the real browser date, same simulated-time approach the
+// rest of the app already uses for the Simulation Year.
+let currentSimDate: string = new Date().toISOString().slice(0, 10);
+
+export function setApiSimDate(date: string) {
+  currentSimDate = date;
 }
 
 function now() {
@@ -64,6 +77,28 @@ function getFundingSourceOrThrow(id: string): FundingSource {
   const source = getDb().fundingSources.find((f) => f.id === id);
   if (!source) throw new Error('Invalid Source of Funding');
   return source;
+}
+
+function getBudgetPeriod(type: BudgetExerciseType): BudgetPeriod {
+  const period = getDb().budgetPeriods.find((p) => p.type === type);
+  if (!period) throw new Error('Not found');
+  return period;
+}
+
+// Throws if the acting user isn't allowed to create/edit/submit/approve a
+// budget line of this kind right now, given its budget exercise's current
+// status (Draft/Open impose no extra restriction; Closed for Submission
+// restricts to Finance; Closed and Locked restricts to Super Admin only).
+function requireBudgetPeriodEditable(kind: BudgetKind, user: User) {
+  const type = exerciseTypeForKind(kind);
+  const period = getBudgetPeriod(type);
+  const status = effectiveBudgetPeriodStatus(period, currentSimDate);
+  if (!canActOnBudgetPeriod(status, user)) {
+    if (status === 'Closed and Locked') {
+      throw new Error(`${EXERCISE_LABEL[type]} is Closed and Locked. Only Finance Admin can reopen it for edits.`);
+    }
+    throw new Error(`${EXERCISE_LABEL[type]} is Closed for Submission. Only Finance Officer or Finance Manager can still edit.`);
+  }
 }
 
 // A line's "owning project" for permission purposes — a real Project for a
@@ -91,6 +126,39 @@ function pushHistory(line: StoredBudgetLine, byUserId: string, action: string, f
 // reference into the singleton store. Without this, mutating an object in
 // place and then returning that same reference means React's setState sees
 // Object.is(prev, next) === true and silently skips the re-render.
+// Rolls every existing MTP-kind budget line forward into a new 15-year
+// window starting at `newStartYear`, pulling over whatever overlapping FY
+// values already exist (same FY label = same value, no shifting needed)
+// and auto-populating the one new year at the end: for a recurring line
+// that's just continuing its existing growth formula one more year (which,
+// since a recurring line's periods are always kept consistent with that
+// formula, also reproduces the correct carried-over values for every
+// overlapping year); for a non-recurring line the new year starts at 0,
+// same as any other blank period. Each line's workflow also resets to
+// BRANCH_REP_DRAFT so the Branch Rep can edit it for the new cycle.
+function rollMtpLinesForward(newStartYear: number, byUserId: string) {
+  const db = getDb();
+  const newKeys = periodKeys('MTP', newStartYear);
+  for (const line of db.budgetLines) {
+    if (line.kind !== 'MTP') continue;
+    const oldPeriods = line.periods;
+    let newPeriods: Record<string, number>;
+    if (line.recurring === 'Yes') {
+      const oldFirstKey = Object.keys(oldPeriods)[0];
+      const baseAmount = Number(oldPeriods[newKeys[0]] ?? oldPeriods[oldFirstKey] ?? 0);
+      newPeriods = applyRecurringInflation('MTP', newStartYear, 'Yes', line.itProject, baseAmount);
+    } else {
+      newPeriods = {};
+      for (const key of newKeys) newPeriods[key] = oldPeriods[key] ?? 0;
+    }
+    line.periods = newPeriods;
+    const from = line.step;
+    line.step = 'BRANCH_REP_DRAFT';
+    pushHistory(line, byUserId, 'rollover', from, line.step, `Rolled forward to the ${newKeys[0]}–${newKeys[newKeys.length - 1]} Medium Term Projection window`);
+    line.updatedAt = now();
+  }
+}
+
 async function run<T>(fn: () => T): Promise<T> {
   try {
     const result = fn();
@@ -416,6 +484,7 @@ export const api = {
         const user = requireUser();
         const project = getProjectOrThrow(projectId);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can add a budget line');
+        requireBudgetPeriodEditable(kind, user);
         const line: StoredBudgetLine = {
           id: nextId('line'),
           projectId: project.id,
@@ -457,6 +526,7 @@ export const api = {
     createAdHoc: (simulationYear: number, projectId: string | null) =>
       run(() => {
         const user = requireUser();
+        requireBudgetPeriodEditable('MTP', user);
         const db = getDb();
         let assignedToUserId = user.id;
         if (projectId !== null) {
@@ -512,6 +582,7 @@ export const api = {
         if (line.kind !== 'MTP') throw new Error('Only Medium Term Projection lines can be attached to a project here');
         const currentProject = owningProjectOf(line);
         if (!isOwningBranchRep(user, currentProject)) throw new Error("Only the line's owning Branch Rep can change its Project Title");
+        requireBudgetPeriodEditable(line.kind, user);
         if (projectId === null) {
           line.projectId = null;
         } else {
@@ -535,6 +606,7 @@ export const api = {
         const project = owningProjectOf(line);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can edit this line');
         if (!isEditableByBranchRep(line.step)) throw new Error('This line is not currently editable');
+        requireBudgetPeriodEditable(line.kind, user);
 
         const EDITABLE_FIELDS = [
           'description',
@@ -590,6 +662,7 @@ export const api = {
         const project = owningProjectOf(line);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can delete this line');
         if (line.step !== 'BRANCH_REP_DRAFT') throw new Error('Only lines still in Draft can be deleted');
+        requireBudgetPeriodEditable(line.kind, user);
         db.budgetLines = db.budgetLines.filter((l) => l.id !== id);
         saveDb();
       }),
@@ -602,6 +675,7 @@ export const api = {
         const project = owningProjectOf(line);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can submit this line');
         if (!canSubmit(line.step)) throw new Error('This line cannot be submitted from its current status');
+        requireBudgetPeriodEditable(line.kind, user);
         if (!line.reviewer1UserId) throw new Error('Reviewer 1 must be selected before submitting');
         if (line.step === 'BRANCH_REP_READY' && (!line.reviewer2UserId || !line.approverUserId)) {
           throw new Error('Reviewer 1, Reviewer 2 and Approver must all be selected before submitting for final approval');
@@ -622,6 +696,7 @@ export const api = {
         const project = owningProjectOf(line);
         if (!canApprove(line.step)) throw new Error('This line is not awaiting approval');
         if (!userCanAct(line, user, project)) throw new Error('You are not the assigned approver for this step');
+        requireBudgetPeriodEditable(line.kind, user);
         if (line.step === 'FIN_OFFICER_R1' || line.step === 'FIN_OFFICER_R2') {
           line.financeOfficerUserId = user.id;
         }
@@ -640,12 +715,101 @@ export const api = {
         if (!line) throw new Error('Not found');
         const project = owningProjectOf(line);
         if (!userCanAct(line, user, project)) throw new Error('You are not the assigned approver for this step');
+        requireBudgetPeriodEditable(line.kind, user);
         const from = line.step;
         line.step = 'BRANCH_REP_DRAFT';
         pushHistory(line, user.id, 'return', from, line.step, note);
         line.updatedAt = now();
         saveDb();
         return withComputed(line);
+      }),
+  },
+
+  budgetPeriods: {
+    list: () => run(() => getDb().budgetPeriods),
+    // Finance Admin opens an exercise: both dates must be set, and no other
+    // exercise may currently be active (Open or Locked) — only one of the
+    // three can be in flight at a time. Opening Medium Term Projection also
+    // rolls every existing MTP line forward into the new 15-year window
+    // (see rollMtpLinesForward below).
+    open: (type: BudgetExerciseType, startDate: string, endDate: string) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can open a budget period');
+        if (!startDate || !endDate) throw new Error('Start Date and End Date are required');
+        if (startDate > endDate) throw new Error('Start Date must be before End Date');
+        const db = getDb();
+        const period = getBudgetPeriod(type);
+        if (period.status !== 'Draft') throw new Error(`${EXERCISE_LABEL[type]} is already active`);
+        const other = db.budgetPeriods.find((p) => p.type !== type && p.status !== 'Draft');
+        if (other) throw new Error(`${EXERCISE_LABEL[other.type]} is currently ${other.status === 'Locked' ? 'Closed and Locked' : 'Open'} — only one budget exercise can be open at a time`);
+
+        if (type === 'MTP') rollMtpLinesForward(fyOfDate(startDate), user.id);
+
+        period.status = 'Open';
+        period.startDate = startDate;
+        period.endDate = endDate;
+        period.updatedAt = now();
+        saveDb();
+        return period;
+      }),
+    // End Date can still move while Open and not yet past, per the spec;
+    // Start Date is locked the moment the period is opened.
+    updateEndDate: (type: BudgetExerciseType, endDate: string) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can change a budget period');
+        const period = getBudgetPeriod(type);
+        const status = effectiveBudgetPeriodStatus(period, currentSimDate);
+        if (status !== 'Open') throw new Error('End Date can only be changed while the period is Open');
+        if (!endDate || (period.startDate && endDate < period.startDate)) throw new Error('End Date must be on or after the Start Date');
+        period.endDate = endDate;
+        period.updatedAt = now();
+        saveDb();
+        return period;
+      }),
+    lock: (type: BudgetExerciseType) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can close and lock a budget period');
+        const period = getBudgetPeriod(type);
+        if (period.status === 'Draft') throw new Error('This budget period has not been opened yet');
+        period.status = 'Locked';
+        period.updatedAt = now();
+        saveDb();
+        return period;
+      }),
+    // Reopens a Closed and Locked period — back to Open, which then reads
+    // as Closed for Submission again if the End Date has already passed
+    // (i.e. this undoes just the Finance Admin lock, not the submission
+    // deadline).
+    reopen: (type: BudgetExerciseType) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can reopen a budget period');
+        const period = getBudgetPeriod(type);
+        if (period.status !== 'Locked') throw new Error('This budget period is not Closed and Locked');
+        period.status = 'Open';
+        period.updatedAt = now();
+        saveDb();
+        return period;
+      }),
+    // Archives a finished (Closed and Locked) cycle back to Draft, clearing
+    // its dates, so a different exercise can be opened next — there's no
+    // other way to free up the "one active exercise" slot once a cycle is
+    // fully done.
+    resetToDraft: (type: BudgetExerciseType) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can reset a budget period');
+        const period = getBudgetPeriod(type);
+        if (period.status !== 'Locked') throw new Error('Only a Closed and Locked budget period can be reset');
+        period.status = 'Draft';
+        period.startDate = null;
+        period.endDate = null;
+        period.updatedAt = now();
+        saveDb();
+        return period;
       }),
   },
 

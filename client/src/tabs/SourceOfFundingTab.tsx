@@ -5,6 +5,62 @@ import { Button, Card, selectCls, StatusBadge } from '../components/ui';
 import { isFinanceOrFinanceAdmin, isOwningBranchRep as isOwningBranchRepUser } from '../lib/workflow';
 import type { FundingEntry, FundingSource, Project } from '../types';
 
+function AddSourceOfFundingModal({
+  pipelineOptions,
+  onClose,
+  onAdded,
+}: {
+  pipelineOptions: FundingSource[];
+  onClose: () => void;
+  onAdded: (fundingSourceId: string) => void;
+}) {
+  const [choice, setChoice] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (!choice) {
+      setError('Select a Source of Fund.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      onAdded(choice);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-xl sm:p-6">
+        <h2 className="text-lg font-semibold text-slate-800">Add Source of Fund</h2>
+        <label className="mt-4 flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Source of Fund</span>
+          <select className={selectCls} value={choice} onChange={(e) => setChoice(e.target.value)} autoFocus>
+            <option value="">Select&hellip;</option>
+            {pipelineOptions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {error && <div className="mt-2 text-sm text-rose-600">{error}</div>}
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={saving || !choice}>
+            {saving ? 'Adding…' : 'Add'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PromoteCell({
   entry,
   approvedOptions,
@@ -56,7 +112,7 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
   const { currentUser } = useAuth();
   const [entries, setEntries] = useState<FundingEntry[]>([]);
   const [catalog, setCatalog] = useState<FundingSource[]>([]);
-  const [newSourceId, setNewSourceId] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function reload() {
@@ -74,15 +130,11 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
   const pipelineOptions = catalog.filter((c) => c.status === 'Active' && c.maturity === 'Pipeline');
   const approvedOptions = catalog.filter((c) => c.status === 'Active' && c.maturity === 'Approved');
 
-  useEffect(() => {
-    if (!newSourceId && pipelineOptions.length > 0) setNewSourceId(pipelineOptions[0].id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalog]);
-
-  async function addEntry() {
+  async function addEntry(fundingSourceId: string) {
     setError(null);
     try {
-      await api.funding.create(project.id, newSourceId);
+      await api.funding.create(project.id, fundingSourceId);
+      setShowAdd(false);
       reload();
     } catch (e) {
       setError((e as Error).message);
@@ -112,18 +164,8 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
   return (
     <div>
       {isOwningBranchRep && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <select className={`${selectCls} w-full sm:w-64`} value={newSourceId} onChange={(e) => setNewSourceId(e.target.value)}>
-            {pipelineOptions.length === 0 && <option value="">No Pipeline Sources of Funding available</option>}
-            {pipelineOptions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-          <Button onClick={addEntry} disabled={!newSourceId}>
-            + New Funding Source
-          </Button>
+        <div className="mb-4">
+          <Button onClick={() => setShowAdd(true)}>+ Add Source of Fund</Button>
         </div>
       )}
       {error && <div className="mb-3 text-sm text-rose-600">{error}</div>}
@@ -191,6 +233,14 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
           </tbody>
         </table>
       </Card>
+
+      {showAdd && (
+        <AddSourceOfFundingModal
+          pipelineOptions={pipelineOptions}
+          onClose={() => setShowAdd(false)}
+          onAdded={addEntry}
+        />
+      )}
     </div>
   );
 }

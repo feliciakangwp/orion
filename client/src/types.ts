@@ -23,6 +23,7 @@ export type UserStatus = 'Active' | 'Inactive';
 export interface User {
   id: string;
   name: string;
+  email: string;
   groups: Group[];
   status: UserStatus;
   createdAt: string;
@@ -30,7 +31,9 @@ export interface User {
 
 // ---------- Project Profile ----------
 
-export type ProjectStatus = 'Draft' | 'Request to Create' | 'Active' | 'Rejected';
+// "Pending" is what was briefly called "Request to Create" — awaiting
+// Finance approval. Branch Rep can keep editing a project while Pending.
+export type ProjectStatus = 'Draft' | 'Pending' | 'Active' | 'Rejected';
 
 export interface Project {
   id: string;
@@ -79,7 +82,28 @@ export interface FundingEntry {
   updatedAt: string;
 }
 
-export type BudgetKind = 'MTE' | 'BLOCK' | 'RB' | 'OB';
+// ---------- Account / Cost Centre catalogs (Finance Admin) ----------
+// Finance-Admin-managed master lists, each entry a code + description (e.g.
+// "511604" / "ICT Consultation Services"). The Account/Cost Centre fields on
+// a budget line are dropdowns populated from these, storing the chosen
+// "code description" string directly (no foreign key — matches how the
+// budget line's Account/Cost Centre were always plain strings).
+
+export interface AccountCode {
+  id: string;
+  code: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface CostCentreCode {
+  id: string;
+  code: string;
+  description: string;
+  createdAt: string;
+}
+
+export type BudgetKind = 'MTP' | 'BLOCK' | 'RB' | 'OB';
 
 export type WorkflowStep =
   | 'BRANCH_REP_DRAFT'
@@ -119,7 +143,10 @@ export interface HistoryEntry {
 
 export interface BudgetLine {
   id: string;
-  projectId: string;
+  // null for an "ad hoc" MTP line not tied to any Project Profile — created
+  // from Medium Term Projection > Budget Line Item. It can be attached to a
+  // project later (and detached again) via its Project Title cell there.
+  projectId: string | null;
   kind: BudgetKind;
   origin: 'new' | 'carried_forward';
   step: WorkflowStep;

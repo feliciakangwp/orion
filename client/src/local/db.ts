@@ -1,6 +1,8 @@
 import { GROUPS } from '../types';
 import type {
+  AccountCode,
   BudgetLine,
+  CostCentreCode,
   FundingEntry,
   FundingSource,
   Group,
@@ -16,6 +18,8 @@ export type StoredBudgetLine = Omit<BudgetLine, 'status' | 'total'>;
 export interface DbShape {
   users: User[];
   fundingSources: FundingSource[];
+  accountCodes: AccountCode[];
+  costCentres: CostCentreCode[];
   projects: Project[];
   fundingEntries: FundingEntry[];
   budgetLines: StoredBudgetLine[];
@@ -23,17 +27,18 @@ export interface DbShape {
   seq: number;
 }
 
-// Bumped from the old persona-based schema (orion.db.v1): this is a clean
-// slate with a different shape (Users/Groups instead of Personas, a funding
-// catalog instead of a hardcoded enum), so old data is simply left behind
-// under its old key rather than migrated.
-const STORAGE_KEY = 'orion.db.v2';
+// Bumped again from orion.db.v2: new fields/entities (User.email, Account
+// and Cost Centre catalogs, nullable BudgetLine.projectId for ad hoc MTP
+// lines) — this is a clean slate with a different shape, so old data is
+// simply left behind under its old key rather than migrated.
+const STORAGE_KEY = 'orion.db.v3';
 
 function buildSeedUsers(): User[] {
   const now = new Date().toISOString();
   return (GROUPS as readonly Group[]).map((group, i) => ({
     id: `user_${i + 1}`,
     name: group,
+    email: `${group.toLowerCase().replace(/\s+/g, '.')}@orion.gov`,
     groups: [group],
     status: 'Active',
     createdAt: now,
@@ -62,10 +67,22 @@ function buildSeedFundingSources(): FundingSource[] {
   }));
 }
 
+function buildSeedAccountCodes(): AccountCode[] {
+  const now = new Date().toISOString();
+  return [{ id: 'acct_1', code: '511604', description: 'ICT Consultation Services', createdAt: now }];
+}
+
+function buildSeedCostCentres(): CostCentreCode[] {
+  const now = new Date().toISOString();
+  return [{ id: 'cc_1', code: '998019', description: 'Minor Development Project', createdAt: now }];
+}
+
 function emptyDb(): DbShape {
   return {
     users: buildSeedUsers(),
     fundingSources: buildSeedFundingSources(),
+    accountCodes: buildSeedAccountCodes(),
+    costCentres: buildSeedCostCentres(),
     projects: [],
     fundingEntries: [],
     budgetLines: [],

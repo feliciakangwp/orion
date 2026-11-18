@@ -24,6 +24,7 @@ function GroupCheckboxes({ selected, onChange }: { selected: Group[]; onChange: 
 
 function AddUserForm({ onAdded }: { onAdded: () => void }) {
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [groups, setGroups] = useState<Group[]>([]);
   const [status, setStatus] = useState<UserStatus>('Active');
   const [error, setError] = useState<string | null>(null);
@@ -35,14 +36,19 @@ function AddUserForm({ onAdded }: { onAdded: () => void }) {
       setError('Name is required.');
       return;
     }
+    if (!email.trim()) {
+      setError('Email is required.');
+      return;
+    }
     if (groups.length === 0) {
       setError('Select at least one group.');
       return;
     }
     setSaving(true);
     try {
-      await api.users.create({ name: name.trim(), groups, status });
+      await api.users.create({ name: name.trim(), email: email.trim(), groups, status });
       setName('');
+      setEmail('');
       setGroups([]);
       setStatus('Active');
       onAdded();
@@ -56,10 +62,14 @@ function AddUserForm({ onAdded }: { onAdded: () => void }) {
   return (
     <Card className="mb-4 p-4">
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr]">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_2fr_1fr]">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Name</span>
             <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</span>
+            <input type="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</span>
@@ -115,6 +125,7 @@ function UserRow({ user, onChanged }: { user: User; onChanged: () => void }) {
   return (
     <tr className="align-top">
       <td className="px-4 py-3 font-medium text-slate-800">{user.name}</td>
+      <td className="px-4 py-3 text-slate-600">{user.email}</td>
       <td className="px-4 py-3">
         {editingGroups ? (
           <div className="flex flex-col gap-2">
@@ -187,6 +198,7 @@ function UserManagementContent() {
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3"></th>
@@ -198,7 +210,7 @@ function UserManagementContent() {
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                   No users yet.
                 </td>
               </tr>

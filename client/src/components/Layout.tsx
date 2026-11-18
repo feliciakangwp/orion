@@ -98,12 +98,26 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <NavItem to="/projects" onNavigate={onNavigate}>
           Project Profile
         </NavItem>
+        <NavItem to="/projects/requests" onNavigate={onNavigate}>
+          Project Profile Request
+        </NavItem>
+
+        <NavHeader>Medium Term Projection</NavHeader>
+        <NavItem to="/mtp/budget-line-item" onNavigate={onNavigate}>
+          Budget Line Item
+        </NavItem>
 
         {isFinanceAdmin && (
           <>
             <NavHeader>Finance Admin</NavHeader>
             <NavItem to="/finance-admin/funding" onNavigate={onNavigate}>
               Source of Funding
+            </NavItem>
+            <NavItem to="/finance-admin/account" onNavigate={onNavigate}>
+              Account
+            </NavItem>
+            <NavItem to="/finance-admin/cost-centre" onNavigate={onNavigate}>
+              Cost Centre
             </NavItem>
           </>
         )}

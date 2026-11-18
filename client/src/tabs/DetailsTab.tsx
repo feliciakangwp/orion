@@ -15,9 +15,12 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
 
   const branchRepOwner = !!currentUser && isOwningBranchRep(currentUser, project);
   const isFinance = !!currentUser && isFinanceUser(currentUser);
+  // Branch Rep can keep editing title/justification/comments while Pending
+  // (awaiting Finance approval), not just Draft/Rejected — the Submit button
+  // below is gated separately so a Pending request can't be re-submitted.
   const editableStatus = project.status === 'Draft' || project.status === 'Rejected';
-  const branchRepEditable = branchRepOwner && editableStatus;
-  const financeEditable = isFinance && project.status === 'Request to Create';
+  const branchRepEditable = branchRepOwner && (editableStatus || project.status === 'Pending');
+  const financeEditable = isFinance && project.status === 'Pending';
   // Finance Officer dropdown includes everyone in either the Finance Officer
   // or Finance Manager group, not scoped to a department.
   const financeOfficers = users.filter((u) => u.groups.includes('Finance Officer') || u.groups.includes('Finance Manager'));
@@ -175,7 +178,7 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
             {project.status === 'Rejected' ? 'Resubmit Request to Create' : 'Submit Request to Create'}
           </Button>
         )}
-        {isFinance && project.status === 'Request to Create' && (
+        {isFinance && project.status === 'Pending' && (
           <>
             <Button variant="secondary" onClick={approve}>
               Approve &amp; Activate

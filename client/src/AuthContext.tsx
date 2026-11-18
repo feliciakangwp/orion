@@ -12,7 +12,7 @@ interface AuthContextValue {
   setCurrentUserId: (id: string) => void;
   reloadUsers: () => void;
   loading: boolean;
-  // Global "what-if" simulation year, applied across every project's MTE and
+  // Global "what-if" simulation year, applied across every project's MTP and
   // Block tabs (rather than being a per-project setting) so a reviewer can
   // consistently compare projects on the same FY horizon.
   simulationYear: number;

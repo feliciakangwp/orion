@@ -10,7 +10,7 @@ import { applyRecurringInflation, emptyPeriods, periodKeys, sumPeriods } from '.
 import {
   canApprove,
   canCreateProject,
-  canManageFundingCatalog,
+  canManageFinanceAdminCatalog,
   canSeeLine,
   canSubmit,
   isEditableByBranchRep,
@@ -24,8 +24,10 @@ import {
   userCanAct,
 } from './lib/workflow';
 import type {
+  AccountCode,
   BudgetKind,
   BudgetLine,
+  CostCentreCode,
   FundingEntry,
   FundingSource,
   Group,
@@ -64,6 +66,14 @@ function getFundingSourceOrThrow(id: string): FundingSource {
   return source;
 }
 
+// A line's "owning project" for permission purposes — a real Project for a
+// line tied to one, or a synthesized minimal stand-in (just the shape
+// isOwningBranchRep/userCanAct need) for an ad hoc line with no Project
+// Profile at all, owned by whoever it's assigned to.
+function owningProjectOf(line: Pick<StoredBudgetLine, 'projectId' | 'assignedToUserId'>): { openedByUserId: string } {
+  return line.projectId ? getProjectOrThrow(line.projectId) : { openedByUserId: line.assignedToUserId };
+}
+
 function withComputed(line: StoredBudgetLine): BudgetLine {
   return { ...line, status: statusFor(line), total: sumPeriods(line.periods) };
 }
@@ -93,15 +103,17 @@ async function run<T>(fn: () => T): Promise<T> {
 export const api = {
   users: {
     list: () => run(() => getDb().users),
-    create: (data: { name: string; groups: Group[]; status?: 'Active' | 'Inactive' }) =>
+    create: (data: { name: string; email: string; groups: Group[]; status?: 'Active' | 'Inactive' }) =>
       run(() => {
         const user = requireUser();
         if (!isSuperAdmin(user)) throw new Error('Only Super Admin can add a user');
         if (!data.name.trim()) throw new Error('Name is required');
+        if (!data.email.trim()) throw new Error('Email is required');
         if (data.groups.length === 0) throw new Error('Select at least one group');
         const newUser: User = {
           id: nextId('user'),
           name: data.name.trim(),
+          email: data.email.trim(),
           groups: data.groups,
           status: data.status ?? 'Active',
           createdAt: now(),
@@ -110,7 +122,7 @@ export const api = {
         saveDb();
         return newUser;
       }),
-    update: (id: string, data: Partial<Pick<User, 'name' | 'groups' | 'status'>>) =>
+    update: (id: string, data: Partial<Pick<User, 'name' | 'email' | 'groups' | 'status'>>) =>
       run(() => {
         const actor = requireUser();
         if (!isSuperAdmin(actor)) throw new Error('Only Super Admin can edit a user');
@@ -118,6 +130,7 @@ export const api = {
         const user = db.users.find((u) => u.id === id);
         if (!user) throw new Error('Not found');
         if ('name' in data && data.name) user.name = data.name;
+        if ('email' in data && data.email) user.email = data.email;
         if ('groups' in data && data.groups) {
           if (data.groups.length === 0) throw new Error('Select at least one group');
           user.groups = data.groups;
@@ -133,7 +146,7 @@ export const api = {
     create: (data: Pick<FundingSource, 'name' | 'maturity' | 'category'>) =>
       run(() => {
         const user = requireUser();
-        if (!canManageFundingCatalog(user)) throw new Error('Only Finance Admin can add a Source of Funding');
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can add a Source of Funding');
         if (!data.name.trim()) throw new Error('Source of Fund name is required');
         const source: FundingSource = {
           id: nextId('fundsrc'),
@@ -150,13 +163,51 @@ export const api = {
     setStatus: (id: string, status: FundingSource['status']) =>
       run(() => {
         const user = requireUser();
-        if (!canManageFundingCatalog(user)) throw new Error('Only Finance Admin can change a Source of Funding');
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can change a Source of Funding');
         const db = getDb();
         const source = db.fundingSources.find((f) => f.id === id);
         if (!source) throw new Error('Not found');
         source.status = status;
         saveDb();
         return source;
+      }),
+  },
+
+  accountCodes: {
+    list: () => run(() => getDb().accountCodes),
+    create: (data: { code: string; description: string }) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can add an Account');
+        if (!data.code.trim() || !data.description.trim()) throw new Error('Account code and description are required');
+        const account: AccountCode = {
+          id: nextId('acct'),
+          code: data.code.trim(),
+          description: data.description.trim(),
+          createdAt: now(),
+        };
+        getDb().accountCodes.push(account);
+        saveDb();
+        return account;
+      }),
+  },
+
+  costCentres: {
+    list: () => run(() => getDb().costCentres),
+    create: (data: { code: string; description: string }) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can add a Cost Centre');
+        if (!data.code.trim() || !data.description.trim()) throw new Error('Cost Centre code and description are required');
+        const costCentre: CostCentreCode = {
+          id: nextId('cc'),
+          code: data.code.trim(),
+          description: data.description.trim(),
+          createdAt: now(),
+        };
+        getDb().costCentres.push(costCentre);
+        saveDb();
+        return costCentre;
       }),
   },
 
@@ -194,12 +245,15 @@ export const api = {
         const project = getProjectOrThrow(id);
         const finance = isFinance(user);
 
-        if (isOwningBranchRep(user, project) && (project.status === 'Draft' || project.status === 'Rejected')) {
+        // Pending (awaiting Finance approval) still lets the owning Branch
+        // Rep keep editing the request — Finance approval happens whenever
+        // they get to it, not the moment it's submitted.
+        if (isOwningBranchRep(user, project) && (project.status === 'Draft' || project.status === 'Rejected' || project.status === 'Pending')) {
           if ('title' in data) project.title = data.title!;
           if ('justification' in data) project.justification = data.justification!;
           if ('additionalComments' in data) project.additionalComments = data.additionalComments!;
         }
-        if (finance && project.status === 'Request to Create') {
+        if (finance && project.status === 'Pending') {
           if ('subAccount' in data) project.subAccount = data.subAccount!;
           if ('developmentCostCentre' in data) project.developmentCostCentre = data.developmentCostCentre!;
           if ('operatingCostCentre' in data) project.operatingCostCentre = data.operatingCostCentre!;
@@ -220,7 +274,7 @@ export const api = {
         if (!project.title || !project.justification) {
           throw new Error('Project Title and Justification of Expenditure are required');
         }
-        project.status = 'Request to Create';
+        project.status = 'Pending';
         project.updatedAt = now();
         saveDb();
         return project;
@@ -230,7 +284,7 @@ export const api = {
         const user = requireUser();
         const project = getProjectOrThrow(id);
         if (!isFinance(user)) throw new Error('Only Finance Officer or Finance Manager can approve project creation');
-        if (project.status !== 'Request to Create') throw new Error('Project is not awaiting Finance approval');
+        if (project.status !== 'Pending') throw new Error('Project is not awaiting Finance approval');
         if (!project.subAccount || !project.developmentCostCentre || !project.operatingCostCentre || !project.financeOfficerId) {
           throw new Error('Sub Account, Development Cost Centre, Operating Cost Centre and Finance Officer must be filled before approving');
         }
@@ -244,7 +298,7 @@ export const api = {
         const user = requireUser();
         const project = getProjectOrThrow(id);
         if (!isFinance(user)) throw new Error('Only Finance Officer or Finance Manager can reject project creation');
-        if (project.status !== 'Request to Create') throw new Error('Project is not awaiting Finance approval');
+        if (project.status !== 'Pending') throw new Error('Project is not awaiting Finance approval');
         project.status = 'Rejected';
         project.updatedAt = now();
         saveDb();
@@ -256,6 +310,9 @@ export const api = {
   // Finance) promoting it to the matching Approved catalog entry.
   funding: {
     list: (projectId: string) => run(() => getDb().fundingEntries.filter((f) => f.projectId === projectId)),
+    // Every funding entry across every project — used by Medium Term
+    // Projection > Budget Line Item, which spans multiple projects at once.
+    listAll: () => run(() => getDb().fundingEntries),
     create: (projectId: string, fundingSourceId: string) =>
       run(() => {
         const user = requireUser();
@@ -336,6 +393,24 @@ export const api = {
           .filter((l) => canSeeLine(l, user, teamMemberUserIds))
           .map(withComputed);
       }),
+    // Cross-project view for Medium Term Projection > Budget Line Item: every
+    // MTP-kind line the acting user can see, whether it belongs to a Project
+    // Profile or is a standalone ad hoc line (projectId === null).
+    listAllMtp: () =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        const teamMembersByProject = new Map<string, string[]>();
+        for (const m of db.teamMembers) {
+          const arr = teamMembersByProject.get(m.projectId) ?? [];
+          arr.push(m.userId);
+          teamMembersByProject.set(m.projectId, arr);
+        }
+        return db.budgetLines
+          .filter((l) => l.kind === 'MTP')
+          .filter((l) => canSeeLine(l, user, l.projectId ? teamMembersByProject.get(l.projectId) ?? [] : []))
+          .map(withComputed);
+      }),
     create: (projectId: string, kind: BudgetKind, simulationYear: number, origin: 'new' | 'carried_forward' = 'new') =>
       run(() => {
         const user = requireUser();
@@ -373,13 +448,91 @@ export const api = {
         saveDb();
         return withComputed(line);
       }),
+    // Adds a Budget Line Item from Medium Term Projection, independent of any
+    // project tab. `projectId` is null for an ad hoc line (no Project
+    // Profile; owned by the acting user) or the id of a project the acting
+    // user is a team member of (or owning Branch Rep of) — in that case the
+    // line is owned by that project's Branch Rep, exactly as if it had been
+    // added from that project's own MTP tab, so it shows up there too.
+    createAdHoc: (simulationYear: number, projectId: string | null) =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        let assignedToUserId = user.id;
+        if (projectId !== null) {
+          const project = getProjectOrThrow(projectId);
+          const teamMemberUserIds = db.teamMembers.filter((m) => m.projectId === projectId).map((m) => m.userId);
+          const allowed = isOwningBranchRep(user, project) || teamMemberUserIds.includes(user.id);
+          if (!allowed) throw new Error('You must be the owning Branch Rep or a team member of that project');
+          assignedToUserId = project.openedByUserId;
+        } else if (!canCreateProject(user)) {
+          throw new Error('Only a Branch Rep can add a Budget Line Item');
+        }
+        const line: StoredBudgetLine = {
+          id: nextId('line'),
+          projectId,
+          kind: 'MTP',
+          origin: 'new',
+          step: 'BRANCH_REP_DRAFT',
+          description: '',
+          opsOrDev: '',
+          account: '',
+          subAcct: '',
+          fundingEntryId: null,
+          recurring: '',
+          costCentre: '',
+          itProject: '',
+          ictExp: '',
+          buildOrBuy: '',
+          basis: '',
+          budgetType: null,
+          periods: emptyPeriods('MTP', simulationYear),
+          assignedToUserId,
+          reviewer1UserId: null,
+          reviewer2UserId: null,
+          approverUserId: null,
+          financeOfficerUserId: null,
+          history: [],
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        db.budgetLines.push(line);
+        saveDb();
+        return withComputed(line);
+      }),
+    // Attaches (or detaches, with projectId = null) an ad hoc Budget Line
+    // Item to a Project Profile. Once attached it shows up in that project's
+    // own MTP tab too, since it's the same underlying record.
+    setProject: (id: string, projectId: string | null) =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        const line = db.budgetLines.find((l) => l.id === id);
+        if (!line) throw new Error('Not found');
+        if (line.kind !== 'MTP') throw new Error('Only Medium Term Projection lines can be attached to a project here');
+        const currentProject = owningProjectOf(line);
+        if (!isOwningBranchRep(user, currentProject)) throw new Error("Only the line's owning Branch Rep can change its Project Title");
+        if (projectId === null) {
+          line.projectId = null;
+        } else {
+          const project = getProjectOrThrow(projectId);
+          const teamMemberUserIds = db.teamMembers.filter((m) => m.projectId === projectId).map((m) => m.userId);
+          if (!isOwningBranchRep(user, project) && !teamMemberUserIds.includes(user.id)) {
+            throw new Error('You must be a team member of that project to attach this line to it');
+          }
+          line.projectId = projectId;
+        }
+        line.updatedAt = now();
+        saveDb();
+        return withComputed(line);
+      }),
     update: (id: string, data: Partial<BudgetLine>, simulationYear: number) =>
       run(() => {
         const user = requireUser();
         const db = getDb();
         const line = db.budgetLines.find((l) => l.id === id);
         if (!line) throw new Error('Not found');
-        const project = getProjectOrThrow(line.projectId);
+        const project = owningProjectOf(line);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can edit this line');
         if (!isEditableByBranchRep(line.step)) throw new Error('This line is not currently editable');
 
@@ -434,7 +587,7 @@ export const api = {
         const db = getDb();
         const line = db.budgetLines.find((l) => l.id === id);
         if (!line) throw new Error('Not found');
-        const project = getProjectOrThrow(line.projectId);
+        const project = owningProjectOf(line);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can delete this line');
         if (line.step !== 'BRANCH_REP_DRAFT') throw new Error('Only lines still in Draft can be deleted');
         db.budgetLines = db.budgetLines.filter((l) => l.id !== id);
@@ -446,7 +599,7 @@ export const api = {
         const db = getDb();
         const line = db.budgetLines.find((l) => l.id === id);
         if (!line) throw new Error('Not found');
-        const project = getProjectOrThrow(line.projectId);
+        const project = owningProjectOf(line);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can submit this line');
         if (!canSubmit(line.step)) throw new Error('This line cannot be submitted from its current status');
         if (!line.reviewer1UserId) throw new Error('Reviewer 1 must be selected before submitting');
@@ -466,7 +619,7 @@ export const api = {
         const db = getDb();
         const line = db.budgetLines.find((l) => l.id === id);
         if (!line) throw new Error('Not found');
-        const project = getProjectOrThrow(line.projectId);
+        const project = owningProjectOf(line);
         if (!canApprove(line.step)) throw new Error('This line is not awaiting approval');
         if (!userCanAct(line, user, project)) throw new Error('You are not the assigned approver for this step');
         if (line.step === 'FIN_OFFICER_R1' || line.step === 'FIN_OFFICER_R2') {
@@ -485,7 +638,7 @@ export const api = {
         const db = getDb();
         const line = db.budgetLines.find((l) => l.id === id);
         if (!line) throw new Error('Not found');
-        const project = getProjectOrThrow(line.projectId);
+        const project = owningProjectOf(line);
         if (!userCanAct(line, user, project)) throw new Error('You are not the assigned approver for this step');
         const from = line.step;
         line.step = 'BRANCH_REP_DRAFT';
@@ -498,6 +651,10 @@ export const api = {
 
   teamMembers: {
     list: (projectId: string) => run(() => getDb().teamMembers.filter((m) => m.projectId === projectId)),
+    // Every project the given user is a team member of — used by Medium
+    // Term Projection > Budget Line Item to populate the Project Title
+    // dropdown with "projects they're a team member of".
+    listForUser: (userId: string) => run(() => getDb().teamMembers.filter((m) => m.userId === userId)),
     addMany: (projectId: string, userIds: string[]) =>
       run(() => {
         const user = requireUser();

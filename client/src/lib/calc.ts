@@ -3,7 +3,7 @@ import type { BudgetKind, YesNo } from '../types';
 const MONTH_KEYS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
 
 export function periodSpan(kind: BudgetKind): number {
-  if (kind === 'MTE') return 15;
+  if (kind === 'MTP') return 15;
   if (kind === 'BLOCK') return 5;
   return 12;
 }

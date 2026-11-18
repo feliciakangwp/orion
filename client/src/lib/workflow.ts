@@ -96,7 +96,9 @@ export function canCreateProject(user: Pick<User, 'groups'>): boolean {
   return isSuperAdmin(user) || inGroup(user, 'Branch Rep');
 }
 
-export function canManageFundingCatalog(user: Pick<User, 'groups'>): boolean {
+// Governs all three Finance Admin catalogs: Source of Funding, Account, and
+// Cost Centre.
+export function canManageFinanceAdminCatalog(user: Pick<User, 'groups'>): boolean {
   return isSuperAdmin(user) || inGroup(user, 'Finance Admin');
 }
 

@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 const STATUS_COLORS: Record<string, string> = {
   Draft: 'bg-slate-200 text-slate-700',
   New: 'bg-slate-200 text-slate-700',
-  'Request to Create': 'bg-amber-100 text-amber-800',
+  Pending: 'bg-amber-100 text-amber-800',
   Active: 'bg-emerald-100 text-emerald-800',
   Rejected: 'bg-rose-100 text-rose-800',
   Inactive: 'bg-slate-200 text-slate-500',

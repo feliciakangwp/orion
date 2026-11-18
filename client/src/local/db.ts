@@ -1,20 +1,21 @@
-import { DEPTS, DEPT_ROLE_TYPES } from '../types';
+import { GROUPS } from '../types';
 import type {
   BudgetLine,
-  Dept,
   FundingEntry,
-  Persona,
-  Project,
+  FundingSource,
+  Group,
   TeamMember,
+  Project,
+  User,
 } from '../types';
 
 // status/total are always derived (see lib/workflow.ts statusFor / lib/calc.ts
-// sumPeriods) rather than stored, mirroring how the original server never
-// persisted them either — only its JSON responses included them.
+// sumPeriods) rather than stored.
 export type StoredBudgetLine = Omit<BudgetLine, 'status' | 'total'>;
 
 export interface DbShape {
-  personas: Persona[];
+  users: User[];
+  fundingSources: FundingSource[];
   projects: Project[];
   fundingEntries: FundingEntry[];
   budgetLines: StoredBudgetLine[];
@@ -22,26 +23,49 @@ export interface DbShape {
   seq: number;
 }
 
-const STORAGE_KEY = 'orion.db.v1';
+// Bumped from the old persona-based schema (orion.db.v1): this is a clean
+// slate with a different shape (Users/Groups instead of Personas, a funding
+// catalog instead of a hardcoded enum), so old data is simply left behind
+// under its old key rather than migrated.
+const STORAGE_KEY = 'orion.db.v2';
 
-function buildSeedPersonas(): Persona[] {
-  const personas: Persona[] = [];
-  let n = 1;
-  for (const dept of DEPTS as readonly Dept[]) {
-    for (const roleType of DEPT_ROLE_TYPES) {
-      personas.push({ id: `persona_${n++}`, name: `${dept} ${roleType}`, roleType, dept });
-    }
-  }
-  for (const name of ['Fin Officer 1', 'Fin Officer 2', 'Fin Officer 3']) {
-    personas.push({ id: `persona_${n++}`, name, roleType: 'Fin Officer', dept: null });
-  }
-  personas.push({ id: `persona_${n++}`, name: 'Fin Manager', roleType: 'Fin Manager', dept: null });
-  return personas;
+function buildSeedUsers(): User[] {
+  const now = new Date().toISOString();
+  return (GROUPS as readonly Group[]).map((group, i) => ({
+    id: `user_${i + 1}`,
+    name: group,
+    groups: [group],
+    status: 'Active',
+    createdAt: now,
+  }));
+}
+
+function buildSeedFundingSources(): FundingSource[] {
+  const now = new Date().toISOString();
+  const rows: Array<[string, FundingSource['maturity'], FundingSource['category']]> = [
+    ['Above the Block (P)', 'Pipeline', 'External'],
+    ['Above the Block', 'Approved', 'External'],
+    ['Within the Block (P)', 'Pipeline', 'Internal'],
+    ['Within the Block', 'Approved', 'Internal'],
+    ['Central Digitalisation Board (P)', 'Pipeline', 'External'],
+    ['Central Digitalisation Board', 'Approved', 'External'],
+    ['Initial Budget (P)', 'Pipeline', 'External'],
+    ['Initial Budget', 'Approved', 'External'],
+  ];
+  return rows.map(([name, maturity, category], i) => ({
+    id: `fundsrc_${i + 1}`,
+    name,
+    maturity,
+    category,
+    status: 'Active',
+    createdAt: now,
+  }));
 }
 
 function emptyDb(): DbShape {
   return {
-    personas: buildSeedPersonas(),
+    users: buildSeedUsers(),
+    fundingSources: buildSeedFundingSources(),
     projects: [],
     fundingEntries: [],
     budgetLines: [],

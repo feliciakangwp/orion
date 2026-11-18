@@ -1,19 +1,36 @@
-export const DEPTS = ['PSB', 'PCB', 'SIB', 'ACB', 'FIN'] as const;
-export type Dept = (typeof DEPTS)[number];
+// ---------- Users & Groups ----------
+// A User is a named person who can belong to multiple Groups at once; access
+// throughout the app is granted by group membership, not by a single fixed
+// role. There is no department concept — a user with, say, "DY Head" can
+// review any project, not just ones from a particular department.
 
-export const DEPT_ROLE_TYPES = ['Branch Rep', 'DY Head', 'Head', 'SMGT'] as const;
-export type DeptRoleType = (typeof DEPT_ROLE_TYPES)[number];
-export type FinRoleType = 'Fin Officer' | 'Fin Manager';
-export type RoleType = DeptRoleType | FinRoleType;
+export const GROUPS = [
+  'Super Admin',
+  'Branch Rep',
+  'DY Head',
+  'Head',
+  'SMGT',
+  'CIO',
+  'HR',
+  'Finance Officer',
+  'Finance Manager',
+  'Finance Admin',
+] as const;
+export type Group = (typeof GROUPS)[number];
 
-export interface Persona {
+export type UserStatus = 'Active' | 'Inactive';
+
+export interface User {
   id: string;
   name: string;
-  roleType: RoleType;
-  dept: Dept | null;
+  groups: Group[];
+  status: UserStatus;
+  createdAt: string;
 }
 
-export type ProjectStatus = 'Draft' | 'Request to Create' | 'Active';
+// ---------- Project Profile ----------
+
+export type ProjectStatus = 'Draft' | 'Request to Create' | 'Active' | 'Rejected';
 
 export interface Project {
   id: string;
@@ -21,31 +38,43 @@ export interface Project {
   status: ProjectStatus;
   justification: string;
   additionalComments: string;
+  // Filled in by Finance once routed to them
   subAccount: string;
   developmentCostCentre: string;
   operatingCostCentre: string;
-  financeOfficerId: string | null;
-  openedByPersonaId: string;
-  openedByDept: Dept;
+  financeOfficerId: string | null; // User id (Finance Officer or Finance Manager)
+  // Ownership
+  openedByUserId: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export const EXTERNAL_FUNDING_SOURCES = ['ATB', 'RF', 'CDB', 'IB'] as const;
-export const INTERNAL_FUNDING_SOURCES = ['WTB', 'Mainstreaming'] as const;
-export type FundingSource =
-  | (typeof EXTERNAL_FUNDING_SOURCES)[number]
-  | (typeof INTERNAL_FUNDING_SOURCES)[number];
-export type FundingType = 'External' | 'Internal';
-export type FundingStatus = 'Pipeline' | 'Approved';
+// ---------- Source of Funding catalog (Finance Admin) ----------
+// A Finance-Admin-managed master list of named funding sources. Each name
+// typically exists as a Pipeline/Approved pair (e.g. "Within the Block (P)"
+// and "Within the Block") — Branch Reps pick a Pipeline entry for a project;
+// Finance Officer/Finance Admin later swap it to the matching Approved entry
+// as the approval action itself, rather than a separate "approve" step.
 
+export type FundingMaturity = 'Pipeline' | 'Approved';
+export type FundingCategory = 'Internal' | 'External';
+export type CatalogStatus = 'Active' | 'Inactive';
+
+export interface FundingSource {
+  id: string;
+  name: string;
+  maturity: FundingMaturity;
+  category: FundingCategory;
+  status: CatalogStatus;
+  createdAt: string;
+}
+
+// A project's chosen funding source. Its "type"/"status" for display are
+// always derived live from the referenced catalog entry, not duplicated here.
 export interface FundingEntry {
   id: string;
   projectId: string;
-  fundingPotId: string;
-  sourceOfFunding: FundingSource;
-  fundingType: FundingType;
-  status: FundingStatus;
+  fundingSourceId: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -81,7 +110,7 @@ export type BudgetType = 'RB' | 'OB';
 
 export interface HistoryEntry {
   at: string;
-  byPersonaId: string;
+  byUserId: string;
   action: string;
   fromStep: WorkflowStep;
   toStep: WorkflowStep;
@@ -94,7 +123,7 @@ export interface BudgetLine {
   kind: BudgetKind;
   origin: 'new' | 'carried_forward';
   step: WorkflowStep;
-  status: BudgetLineStatus; // computed by server
+  status: BudgetLineStatus; // computed
   description: string;
   opsOrDev: OpsOrDev | '';
   account: string;
@@ -108,20 +137,22 @@ export interface BudgetLine {
   basis: string;
   budgetType: BudgetType | null;
   periods: Record<string, number>;
-  total: number; // computed by server
-  assignedToPersonaId: string;
-  reviewer1PersonaId: string | null;
-  reviewer2PersonaId: string | null;
-  approverPersonaId: string | null;
-  financeOfficerPersonaId: string | null;
+  total: number; // computed
+  assignedToUserId: string;
+  reviewer1UserId: string | null;
+  reviewer2UserId: string | null;
+  approverUserId: string | null;
+  financeOfficerUserId: string | null;
   history: HistoryEntry[];
   createdAt: string;
   updatedAt: string;
 }
 
+// ---------- Team Members ----------
+
 export interface TeamMember {
   id: string;
   projectId: string;
-  personaId: string;
+  userId: string;
   createdAt: string;
 }

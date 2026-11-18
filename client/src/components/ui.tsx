@@ -5,6 +5,8 @@ const STATUS_COLORS: Record<string, string> = {
   New: 'bg-slate-200 text-slate-700',
   'Request to Create': 'bg-amber-100 text-amber-800',
   Active: 'bg-emerald-100 text-emerald-800',
+  Rejected: 'bg-rose-100 text-rose-800',
+  Inactive: 'bg-slate-200 text-slate-500',
   Pipeline: 'bg-amber-100 text-amber-800',
   Approved: 'bg-emerald-100 text-emerald-800',
   'Pending Review': 'bg-amber-100 text-amber-800',

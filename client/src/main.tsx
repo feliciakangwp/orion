@@ -2,8 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import App from './App.tsx';
+import { AuthProvider } from './AuthContext.tsx';
 import './index.css';
-import { PersonaProvider } from './PersonaContext.tsx';
 
 // HashRouter (not BrowserRouter): GitHub Pages serves static files with no
 // server-side rewrite to index.html, so a deep link like /projects/xyz would
@@ -12,9 +12,9 @@ import { PersonaProvider } from './PersonaContext.tsx';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <HashRouter>
-      <PersonaProvider>
+      <AuthProvider>
         <App />
-      </PersonaProvider>
+      </AuthProvider>
     </HashRouter>
   </StrictMode>
 );

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../AuthContext';
 import { Button, Card, currency, StatusBadge } from '../components/ui';
 import { periodKeys, periodSpan } from '../lib/calc';
-import { canApprove, canSubmit, isEditableByBranchRep, personaCanAct } from '../lib/workflow';
-import { usePersona } from '../PersonaContext';
-import type { BudgetKind, BudgetLine, FundingEntry, Project } from '../types';
+import { canApprove, canSubmit, isEditableByBranchRep, isFinanceOrFinanceAdmin, userCanAct } from '../lib/workflow';
+import type { BudgetKind, BudgetLine, FundingEntry, FundingSource, Project, User } from '../types';
 
 const KIND_LABEL: Record<BudgetKind, string> = {
   MTE: 'MTE',
@@ -17,6 +17,7 @@ function BudgetLineRow({
   line,
   project,
   fundingEntries,
+  catalog,
   keys,
   onLocalEdit,
   onServerUpdate,
@@ -25,24 +26,30 @@ function BudgetLineRow({
   line: BudgetLine;
   project: Project;
   fundingEntries: FundingEntry[];
+  catalog: FundingSource[];
   keys: string[];
   onLocalEdit: (line: BudgetLine) => void;
   onServerUpdate: (line: BudgetLine) => void;
   onRemoved: (id: string) => void;
 }) {
-  const { currentPersona, personas, simulationYear } = usePersona();
+  const { currentUser, users, simulationYear } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const isOwningBranchRep = currentPersona?.roleType === 'Branch Rep' && currentPersona.dept === project.openedByDept;
+  const isOwningBranchRep =
+    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
   const editable = isOwningBranchRep && isEditableByBranchRep(line.step);
-  const canAct = currentPersona ? personaCanAct(line, currentPersona, project.openedByDept) : false;
+  const canAct = currentUser ? userCanAct(line, currentUser, project) : false;
   const showItFields = line.itProject === 'Yes';
 
-  const reviewerOptions = personas.filter(
-    (p) => p.dept === project.openedByDept && (p.roleType === 'DY Head' || p.roleType === 'Head')
-  );
-  const approverOptions = personas.filter((p) => p.dept === project.openedByDept && p.roleType === 'SMGT');
-  const finOfficerOptions = personas.filter((p) => p.roleType === 'Fin Officer');
-  const nameOf = (id: string | null) => (id ? personas.find((p) => p.id === id)?.name ?? id : '—');
+  // No department scoping: every user with the matching group is eligible.
+  const reviewerOptions = users.filter((u) => u.groups.includes('DY Head') || u.groups.includes('Head'));
+  const approverOptions = users.filter((u) => u.groups.includes('SMGT'));
+  const finOfficerOptions = users.filter((u) => u.groups.includes('Finance Officer') || u.groups.includes('Finance Manager'));
+  const nameOf = (id: string | null) => (id ? users.find((u: User) => u.id === id)?.name ?? id : '—');
+  const fundingSourceNameOf = (fundingEntryId: string | null) => {
+    const entry = fundingEntries.find((f) => f.id === fundingEntryId);
+    const source = entry ? catalog.find((c) => c.id === entry.fundingSourceId) : undefined;
+    return source?.name ?? '—';
+  };
 
   async function patch(data: Partial<BudgetLine>) {
     setError(null);
@@ -144,7 +151,7 @@ function BudgetLineRow({
           <option value="">—</option>
           {fundingEntries.map((f) => (
             <option key={f.id} value={f.id}>
-              {f.sourceOfFunding}
+              {fundingSourceNameOf(f.id)}
             </option>
           ))}
         </select>
@@ -229,18 +236,18 @@ function BudgetLineRow({
           </td>
         );
       })}
-      <td className="px-2 py-2 text-xs text-slate-600">{nameOf(line.assignedToPersonaId)}</td>
+      <td className="px-2 py-2 text-xs text-slate-600">{nameOf(line.assignedToUserId)}</td>
       <td className="px-2 py-2">
         <select
           className={`${cellInput} w-32`}
-          value={line.reviewer1PersonaId ?? ''}
+          value={line.reviewer1UserId ?? ''}
           disabled={!editable}
-          onChange={(e) => patch({ reviewer1PersonaId: e.target.value || null })}
+          onChange={(e) => patch({ reviewer1UserId: e.target.value || null })}
         >
           <option value="">—</option>
-          {reviewerOptions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
+          {reviewerOptions.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
             </option>
           ))}
         </select>
@@ -248,14 +255,14 @@ function BudgetLineRow({
       <td className="px-2 py-2">
         <select
           className={`${cellInput} w-32`}
-          value={line.reviewer2PersonaId ?? ''}
+          value={line.reviewer2UserId ?? ''}
           disabled={!editable}
-          onChange={(e) => patch({ reviewer2PersonaId: e.target.value || null })}
+          onChange={(e) => patch({ reviewer2UserId: e.target.value || null })}
         >
           <option value="">—</option>
-          {reviewerOptions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
+          {reviewerOptions.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
             </option>
           ))}
         </select>
@@ -263,14 +270,14 @@ function BudgetLineRow({
       <td className="px-2 py-2">
         <select
           className={`${cellInput} w-32`}
-          value={line.approverPersonaId ?? ''}
+          value={line.approverUserId ?? ''}
           disabled={!editable}
-          onChange={(e) => patch({ approverPersonaId: e.target.value || null })}
+          onChange={(e) => patch({ approverUserId: e.target.value || null })}
         >
           <option value="">—</option>
-          {approverOptions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
+          {approverOptions.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
             </option>
           ))}
         </select>
@@ -278,14 +285,14 @@ function BudgetLineRow({
       <td className="px-2 py-2">
         <select
           className={`${cellInput} w-32`}
-          value={line.financeOfficerPersonaId ?? ''}
+          value={line.financeOfficerUserId ?? ''}
           disabled={!editable}
-          onChange={(e) => patch({ financeOfficerPersonaId: e.target.value || null })}
+          onChange={(e) => patch({ financeOfficerUserId: e.target.value || null })}
         >
           <option value="">—</option>
-          {finOfficerOptions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
+          {finOfficerOptions.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
             </option>
           ))}
         </select>
@@ -319,21 +326,24 @@ function BudgetLineRow({
 }
 
 export function BudgetLinesTab({ project, kind }: { project: Project; kind: BudgetKind }) {
-  const { currentPersona, simulationYear } = usePersona();
+  const { currentUser, simulationYear } = useAuth();
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [fundingEntries, setFundingEntries] = useState<FundingEntry[]>([]);
+  const [catalog, setCatalog] = useState<FundingSource[]>([]);
 
   function reload() {
     api.budgetLines.list(project.id, kind).then(setLines);
     api.funding.list(project.id).then(setFundingEntries);
+    api.fundingCatalog.list().then(setCatalog);
   }
-  // Re-fetch on persona change too: which lines are visible depends on who's
-  // acting (see canSeeLine), so switching personas must refresh the list
-  // rather than leaving the previous persona's view on screen.
-  useEffect(reload, [project.id, kind, currentPersona?.id]);
+  // Re-fetch on user change too: which lines are visible depends on who's
+  // acting (see canSeeLine), so switching users must refresh the list
+  // rather than leaving the previous user's view on screen.
+  useEffect(reload, [project.id, kind, currentUser?.id]);
 
-  const isOwningBranchRep = currentPersona?.roleType === 'Branch Rep' && currentPersona.dept === project.openedByDept;
-  const isFinance = currentPersona?.roleType === 'Fin Officer' || currentPersona?.roleType === 'Fin Manager';
+  const isOwningBranchRep =
+    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
+  const isFinance = !!currentUser && isFinanceOrFinanceAdmin(currentUser);
 
   // MTE/Block period keys follow the global Simulation Year (top bar) rather
   // than a per-project setting, so every project is compared on the same FY
@@ -414,6 +424,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
                 line={line}
                 project={project}
                 fundingEntries={fundingEntries}
+                catalog={catalog}
                 keys={keys}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}

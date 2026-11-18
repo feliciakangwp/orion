@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../AuthContext';
 import { NewProjectModal } from '../components/NewProjectModal';
 import { Button, Card, StatusBadge } from '../components/ui';
-import { usePersona } from '../PersonaContext';
 import type { Project } from '../types';
 
 export function ProjectProfileList() {
-  const { currentPersona, personas } = usePersona();
+  const { currentUser, users } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [showNew, setShowNew] = useState(false);
   const navigate = useNavigate();
@@ -17,8 +17,8 @@ export function ProjectProfileList() {
   }
   useEffect(reload, []);
 
-  const canCreate = currentPersona?.roleType === 'Branch Rep';
-  const nameOf = (id: string) => personas.find((p) => p.id === id)?.name ?? id;
+  const canCreate = currentUser?.groups.includes('Branch Rep') ?? false;
+  const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? id;
 
   return (
     <div>
@@ -51,7 +51,7 @@ export function ProjectProfileList() {
                   <StatusBadge status={p.status} />
                 </td>
                 <td className="px-4 py-3">{p.subAccount || '—'}</td>
-                <td className="px-4 py-3">{nameOf(p.openedByPersonaId)}</td>
+                <td className="px-4 py-3">{nameOf(p.openedByUserId)}</td>
                 <td className="px-4 py-3">{p.operatingCostCentre || '—'}</td>
                 <td className="px-4 py-3">{p.developmentCostCentre || '—'}</td>
               </tr>

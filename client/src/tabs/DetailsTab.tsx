@@ -1,22 +1,27 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../AuthContext';
 import { Button, Card, Field, inputCls, selectCls, StatusBadge, textareaCls } from '../components/ui';
-import { usePersona } from '../PersonaContext';
 import type { Project } from '../types';
 
 export function DetailsTab({ project, onChange }: { project: Project; onChange: () => void }) {
-  const { currentPersona, personas } = usePersona();
+  const { currentUser, users } = useAuth();
   const [form, setForm] = useState(project);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => setForm(project), [project]);
 
-  const isOwningBranchRep = currentPersona?.roleType === 'Branch Rep' && currentPersona.dept === project.openedByDept;
-  const isFinance = currentPersona?.roleType === 'Fin Officer' || currentPersona?.roleType === 'Fin Manager';
-  const branchRepEditable = isOwningBranchRep && project.status === 'Draft';
+  const isOwningBranchRep =
+    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
+  const isFinance = !!currentUser && (currentUser.groups.includes('Finance Officer') || currentUser.groups.includes('Finance Manager'));
+  const editableStatus = project.status === 'Draft' || project.status === 'Rejected';
+  const branchRepEditable = isOwningBranchRep && editableStatus;
   const financeEditable = isFinance && project.status === 'Request to Create';
-  const financeOfficers = personas.filter((p) => p.roleType === 'Fin Officer');
+  // Finance Officer dropdown includes everyone in either the Finance Officer
+  // or Finance Manager group, not scoped to a department.
+  const financeOfficers = users.filter((u) => u.groups.includes('Finance Officer') || u.groups.includes('Finance Manager'));
+  const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? id;
 
   const dirty = JSON.stringify(form) !== JSON.stringify(project);
 
@@ -61,6 +66,16 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
     }
   }
 
+  async function reject() {
+    setError(null);
+    try {
+      await api.projects.reject(project.id);
+      onChange();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <Card className="max-w-3xl p-4 sm:p-6">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -69,6 +84,11 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
             <StatusBadge status={project.status} />
           </div>
         </Field>
+        {project.status === 'Active' && project.financeOfficerId && (
+          <Field label="Finance Officer in Charge">
+            <div className="text-sm text-slate-700">{nameOf(project.financeOfficerId)}</div>
+          </Field>
+        )}
 
         <div className="sm:col-span-2">
           <Field label="Project Title">
@@ -117,9 +137,9 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
             onChange={(e) => setForm({ ...form, financeOfficerId: e.target.value || null })}
           >
             <option value="">Select&hellip;</option>
-            {financeOfficers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
+            {financeOfficers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
               </option>
             ))}
           </select>
@@ -150,15 +170,20 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
             {saving ? 'Saving…' : 'Save Changes'}
           </Button>
         )}
-        {isOwningBranchRep && project.status === 'Draft' && (
+        {isOwningBranchRep && editableStatus && (
           <Button variant="secondary" onClick={submitRequest}>
-            Submit Request to Create
+            {project.status === 'Rejected' ? 'Resubmit Request to Create' : 'Submit Request to Create'}
           </Button>
         )}
         {isFinance && project.status === 'Request to Create' && (
-          <Button variant="secondary" onClick={approve}>
-            Approve &amp; Activate
-          </Button>
+          <>
+            <Button variant="secondary" onClick={approve}>
+              Approve &amp; Activate
+            </Button>
+            <Button variant="danger" onClick={reject}>
+              Reject
+            </Button>
+          </>
         )}
       </div>
     </Card>

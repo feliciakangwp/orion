@@ -1,4 +1,4 @@
-import type { BudgetLine, BudgetLineStatus, Persona, WorkflowStep } from '../types';
+import type { BudgetLine, BudgetLineStatus, Group, User, WorkflowStep } from '../types';
 
 export const STEP_STATUS: Record<WorkflowStep, (origin: BudgetLine['origin']) => BudgetLineStatus> = {
   BRANCH_REP_DRAFT: (origin) => (origin === 'new' ? 'New' : 'Draft'),
@@ -69,48 +69,73 @@ export function nextOnSubmit(step: WorkflowStep): WorkflowStep {
   throw new Error(`No submit transition from step ${step}`);
 }
 
-type ActableLine = Pick<BudgetLine, 'step' | 'reviewer1PersonaId' | 'reviewer2PersonaId' | 'approverPersonaId'>;
+export function inGroup(user: Pick<User, 'groups'>, group: Group): boolean {
+  return user.groups.includes(group);
+}
 
-export function personaCanAct(line: ActableLine, persona: Persona, projectOpenedByDept: string): boolean {
+export function isFinance(user: Pick<User, 'groups'>): boolean {
+  return inGroup(user, 'Finance Officer') || inGroup(user, 'Finance Manager');
+}
+
+// Finance Admin is treated as able to act anywhere Finance can for budget
+// line approval/visibility purposes (see canSeeLine), since it's the more
+// senior finance role managing the funding catalog itself.
+export function isFinanceOrFinanceAdmin(user: Pick<User, 'groups'>): boolean {
+  return isFinance(user) || inGroup(user, 'Finance Admin');
+}
+
+function isOwningBranchRep(user: Pick<User, 'id' | 'groups'>, project: { openedByUserId: string }): boolean {
+  return user.id === project.openedByUserId && inGroup(user, 'Branch Rep');
+}
+
+type ActableLine = Pick<BudgetLine, 'step' | 'reviewer1UserId' | 'reviewer2UserId' | 'approverUserId'>;
+
+// Resolve whether a given user is permitted to act as the required actor
+// role for this budget line right now. There is no department scoping:
+// Reviewer1/Reviewer2/Approver are exact-user matches (whoever was picked
+// into that slot); Finance Officer/Finance Manager match by group, project
+// (and department) agnostic.
+export function userCanAct(line: ActableLine, user: User, project: { openedByUserId: string }): boolean {
   const role = STEP_ACTOR[line.step];
   if (!role) return false;
   switch (role) {
     case 'BranchRep':
-      return persona.roleType === 'Branch Rep' && persona.dept === projectOpenedByDept;
+      return isOwningBranchRep(user, project);
     case 'Reviewer1':
-      return !!line.reviewer1PersonaId && persona.id === line.reviewer1PersonaId;
+      return !!line.reviewer1UserId && user.id === line.reviewer1UserId;
     case 'Reviewer2':
-      return !!line.reviewer2PersonaId && persona.id === line.reviewer2PersonaId;
+      return !!line.reviewer2UserId && user.id === line.reviewer2UserId;
     case 'Approver':
-      return !!line.approverPersonaId && persona.id === line.approverPersonaId;
+      return !!line.approverUserId && user.id === line.approverUserId;
     case 'FinOfficer':
-      return persona.roleType === 'Fin Officer';
+      return inGroup(user, 'Finance Officer');
     case 'FinManager':
-      return persona.roleType === 'Fin Manager';
+      return inGroup(user, 'Finance Manager');
     default:
       return false;
   }
 }
 
+export { isOwningBranchRep };
+
 type TaggableLine = Pick<
   BudgetLine,
-  'assignedToPersonaId' | 'reviewer1PersonaId' | 'reviewer2PersonaId' | 'approverPersonaId' | 'financeOfficerPersonaId'
+  'assignedToUserId' | 'reviewer1UserId' | 'reviewer2UserId' | 'approverUserId' | 'financeOfficerUserId'
 >;
 
-// Line-level visibility: Finance sees every line. Everyone else only sees a
-// line if they're tagged on it somewhere (creator, reviewer, approver, or
-// finance officer) or they're a team member of the project — being of the
-// same department, or even the owning Branch Rep's own dept hierarchy, is
-// not by itself enough.
-export function canSeeLine(line: TaggableLine, persona: Persona, teamMemberPersonaIds: readonly string[]): boolean {
-  if (persona.roleType === 'Fin Officer' || persona.roleType === 'Fin Manager') return true;
+// Line-level visibility: Finance (Officer/Manager/Admin) sees every line.
+// Everyone else only sees a line if they're tagged on it somewhere
+// (creator, reviewer, approver, or finance officer) or they're a team
+// member of the project.
+export function canSeeLine(line: TaggableLine, user: User, teamMemberUserIds: readonly string[]): boolean {
+  if (isFinanceOrFinanceAdmin(user)) return true;
   const taggedIds = [
-    line.assignedToPersonaId,
-    line.reviewer1PersonaId,
-    line.reviewer2PersonaId,
-    line.approverPersonaId,
-    line.financeOfficerPersonaId,
+    line.assignedToUserId,
+    line.reviewer1UserId,
+    line.reviewer2UserId,
+    line.approverUserId,
+    line.financeOfficerUserId,
   ];
-  if (taggedIds.includes(persona.id)) return true;
-  return teamMemberPersonaIds.includes(persona.id);
+  if (taggedIds.includes(user.id)) return true;
+  return teamMemberUserIds.includes(user.id);
 }

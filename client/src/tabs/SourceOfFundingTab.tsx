@@ -1,25 +1,31 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { Button, Card, inputCls, selectCls, StatusBadge } from '../components/ui';
-import { usePersona } from '../PersonaContext';
-import { EXTERNAL_FUNDING_SOURCES, INTERNAL_FUNDING_SOURCES, type FundingEntry, type FundingSource, type Project } from '../types';
+import { useAuth } from '../AuthContext';
+import { Button, Card, selectCls, StatusBadge } from '../components/ui';
+import type { FundingEntry, FundingSource, Project } from '../types';
 
-const ALL_SOURCES: FundingSource[] = [...EXTERNAL_FUNDING_SOURCES, ...INTERNAL_FUNDING_SOURCES];
-
-function FundingPotCell({ entry, onDone }: { entry: FundingEntry; onDone: () => void }) {
-  const [potId, setPotId] = useState('');
+function PromoteCell({
+  entry,
+  approvedOptions,
+  onDone,
+}: {
+  entry: FundingEntry;
+  approvedOptions: FundingSource[];
+  onDone: () => void;
+}) {
+  const [choice, setChoice] = useState(approvedOptions[0]?.id ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function approve() {
-    if (!potId.trim()) {
-      setError('Funding Pot ID is required to approve.');
+  async function promote() {
+    if (!choice) {
+      setError('Select an Approved Source of Funding.');
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await api.funding.approve(entry.id, potId.trim());
+      await api.funding.update(entry.id, choice);
       onDone();
     } catch (e) {
       setError((e as Error).message);
@@ -29,15 +35,16 @@ function FundingPotCell({ entry, onDone }: { entry: FundingEntry; onDone: () => 
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <input
-        className={`${inputCls} w-32`}
-        placeholder="Pot ID"
-        value={potId}
-        onChange={(e) => setPotId(e.target.value)}
-      />
-      <Button onClick={approve} disabled={saving}>
-        Approve
+    <div className="flex flex-wrap items-center gap-2">
+      <select className={`${selectCls} w-44`} value={choice} onChange={(e) => setChoice(e.target.value)}>
+        {approvedOptions.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      <Button onClick={promote} disabled={saving || !choice}>
+        Update to Approved
       </Button>
       {error && <span className="text-xs text-rose-600">{error}</span>}
     </div>
@@ -45,33 +52,51 @@ function FundingPotCell({ entry, onDone }: { entry: FundingEntry; onDone: () => 
 }
 
 export function SourceOfFundingTab({ project }: { project: Project }) {
-  const { currentPersona } = usePersona();
+  const { currentUser } = useAuth();
   const [entries, setEntries] = useState<FundingEntry[]>([]);
-  const [newSource, setNewSource] = useState<FundingSource>('ATB');
+  const [catalog, setCatalog] = useState<FundingSource[]>([]);
+  const [newSourceId, setNewSourceId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   function reload() {
     api.funding.list(project.id).then(setEntries);
+    api.fundingCatalog.list().then(setCatalog);
   }
   useEffect(reload, [project.id]);
 
-  const isOwningBranchRep = currentPersona?.roleType === 'Branch Rep' && currentPersona.dept === project.openedByDept;
-  const isFinance = currentPersona?.roleType === 'Fin Officer' || currentPersona?.roleType === 'Fin Manager';
+  const isOwningBranchRep =
+    !!currentUser && currentUser.id === project.openedByUserId && currentUser.groups.includes('Branch Rep');
+  const isFinanceActor =
+    !!currentUser &&
+    (currentUser.groups.includes('Finance Officer') ||
+      currentUser.groups.includes('Finance Manager') ||
+      currentUser.groups.includes('Finance Admin'));
+
+  const sourceOf = (id: string) => catalog.find((c) => c.id === id);
+  // Branch Reps may only pick Pipeline, Active catalog entries; Finance picks
+  // the matching Approved entry as the approval action itself.
+  const pipelineOptions = catalog.filter((c) => c.status === 'Active' && c.maturity === 'Pipeline');
+  const approvedOptions = catalog.filter((c) => c.status === 'Active' && c.maturity === 'Approved');
+
+  useEffect(() => {
+    if (!newSourceId && pipelineOptions.length > 0) setNewSourceId(pipelineOptions[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog]);
 
   async function addEntry() {
     setError(null);
     try {
-      await api.funding.create(project.id, newSource);
+      await api.funding.create(project.id, newSourceId);
       reload();
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  async function changeSource(entry: FundingEntry, source: FundingSource) {
+  async function changeSource(entry: FundingEntry, fundingSourceId: string) {
     setError(null);
     try {
-      await api.funding.update(entry.id, { sourceOfFunding: source });
+      await api.funding.update(entry.id, fundingSourceId);
       reload();
     } catch (e) {
       setError((e as Error).message);
@@ -92,14 +117,17 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
     <div>
       {isOwningBranchRep && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <select className={`${selectCls} w-full sm:w-48`} value={newSource} onChange={(e) => setNewSource(e.target.value as FundingSource)}>
-            {ALL_SOURCES.map((s) => (
-              <option key={s} value={s}>
-                {s}
+          <select className={`${selectCls} w-full sm:w-64`} value={newSourceId} onChange={(e) => setNewSourceId(e.target.value)}>
+            {pipelineOptions.length === 0 && <option value="">No Pipeline Sources of Funding available</option>}
+            {pipelineOptions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
               </option>
             ))}
           </select>
-          <Button onClick={addEntry}>+ New Funding Source</Button>
+          <Button onClick={addEntry} disabled={!newSourceId}>
+            + New Funding Source
+          </Button>
         </div>
       )}
       {error && <div className="mb-3 text-sm text-rose-600">{error}</div>}
@@ -108,47 +136,46 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3">Funding Pot ID</th>
               <th className="px-4 py-3">Source of Funding</th>
-              <th className="px-4 py-3">Funding Type</th>
+              <th className="px-4 py-3">Type</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {entries.map((entry) => {
-              const isMainstreaming = entry.sourceOfFunding === 'Mainstreaming';
-              const editableSource = isOwningBranchRep && entry.status === 'Pipeline';
+              const source = sourceOf(entry.fundingSourceId);
+              const isPipeline = source?.maturity === 'Pipeline';
+              const editableByBranchRep = isOwningBranchRep && isPipeline;
               return (
                 <tr key={entry.id}>
-                  <td className="px-4 py-3">{entry.fundingPotId || '—'}</td>
                   <td className="px-4 py-3">
-                    {editableSource ? (
+                    {editableByBranchRep ? (
                       <select
-                        className={`${selectCls} w-36`}
-                        value={entry.sourceOfFunding}
-                        onChange={(e) => changeSource(entry, e.target.value as FundingSource)}
+                        className={`${selectCls} w-56`}
+                        value={entry.fundingSourceId}
+                        onChange={(e) => changeSource(entry, e.target.value)}
                       >
-                        {ALL_SOURCES.filter((s) => s !== 'Mainstreaming' || isMainstreaming).map((s) => (
-                          <option key={s} value={s}>
-                            {s}
+                        {pipelineOptions.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
                           </option>
                         ))}
                       </select>
                     ) : (
-                      entry.sourceOfFunding
+                      source?.name ?? '—'
                     )}
                   </td>
-                  <td className="px-4 py-3">{entry.fundingType}</td>
+                  <td className="px-4 py-3">{source?.category ?? '—'}</td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={entry.status} />
+                    <StatusBadge status={source?.maturity ?? '—'} />
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {isFinance && entry.status === 'Pipeline' && !isMainstreaming && (
-                        <FundingPotCell entry={entry} onDone={reload} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isFinanceActor && isPipeline && (
+                        <PromoteCell entry={entry} approvedOptions={approvedOptions} onDone={reload} />
                       )}
-                      {isOwningBranchRep && entry.status === 'Pipeline' && (
+                      {isOwningBranchRep && isPipeline && (
                         <Button variant="ghost" onClick={() => remove(entry)}>
                           Remove
                         </Button>
@@ -160,7 +187,7 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
             })}
             {entries.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
                   No funding sources yet.
                 </td>
               </tr>

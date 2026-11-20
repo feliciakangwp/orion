@@ -66,7 +66,7 @@ There's no concept of a fixed "persona" or department anymore. Instead:
 Because this deploys as a static site (GitHub Pages), there is nowhere to
 run a shared backend. All users, projects, funding entries, budget lines,
 etc. are stored in **that browser's `localStorage`**, under the key
-`orion.db.v4`. Practically:
+`orion.db.v5`. Practically:
 
 - Data is private to one browser on one device — it is **not shared**
   between different people or different devices. Impersonating different
@@ -93,7 +93,8 @@ npm run dev
 Open the printed `localhost` URL. On first run the app seeds 10 Users (one
 per group, each with a placeholder `@orion.gov` email), the 8-row Source of
 Funding catalog, one Account (`511604` / ICT Consultation Services), one
-Cost Centre (`998019` / Minor Development Project), and the 3 Budget Period
+Cost Centre (`998019` / Minor Development Project), the Inflation Rate table
+(Non IT Item 3%, IT Item 5%), and the 3 Budget Period
 exercises (all Draft) into `localStorage`.
 
 ## Deployment (GitHub Pages)
@@ -204,20 +205,64 @@ so a path-based router would 404 on refresh of a deep link.)
   turns it back into an ad hoc line here).
 - **Team Members** tab — **+ Add** opens a search-and-multi-select modal
   over every User; the list then shows each member's name and group(s).
-- Every budget line (MTP/RB/OB/Block) runs through the same two-round
-  approval chain independently:
-  1. New/Draft → **Pending Review** (Reviewer 1) → **Clarification** (Fin
-     Officer, then Fin Manager) → **Ready for Approval** (back to Branch Rep).
-  2. Branch Rep resubmits → **Pending Approval** through Reviewer 1 →
-     Reviewer 2 → Approver → Fin Officer → Fin Manager → **Fin Supported**.
-  Reviewer 1/2 dropdowns list every user in the DY Head or Head group;
-  Approver lists every SMGT user; Finance Officer lists every Finance
-  Officer/Finance Manager user — none of this is department-scoped.
+- Every budget line (MTP/RB/OB/Block) runs through the same single linear
+  approval chain:
+  **Draft** (Branch Rep submits) → **Review** (Reviewer 1) →
+  **Clarification** (Finance Officer, then Finance Manager — either can
+  reject back one step, which the other side then "clarifies" and
+  resubmits) → **Pending Approval** (Reviewer 2, then **CIO** if it's an
+  IT project or the **Approver** otherwise) → **Approved**. A reject at
+  Review or Pending Approval restarts the whole line at Branch Rep Draft;
+  a reject during Clarification only bounces back one step. Reviewer 1/2
+  dropdowns list every user in the DY Head or Head group (Reviewer 2 must
+  be a different person from Reviewer 1); Approver lists every SMGT user;
+  Finance Officer/Finance Manager/CIO act by group membership, not a
+  per-line pick — none of this is department-scoped.
+- The moment a line reaches **Approved**, it's duplicated into **Fin
+  Supported** (see below) with its figures rounded to the nearest 100
+  (a figure under 100 is left exactly as it is); the original line stays
+  exactly as approved and is never edited again.
 - **Line-level visibility**: a user only sees a budget line if they're
   tagged on it somewhere (assigned to, Reviewer 1, Reviewer 2, Approver, or
   Finance Officer) or they're a team member of the project — see
   `canSeeLine` in `client/src/lib/workflow.ts`. Finance (Officer, Manager,
-  **or Admin**) is the exception and always sees every line.
+  **or Admin**) is the exception and always sees every line. The MTP-only
+  action-queue tabs below (Review Phase, Approval Phase) use a different
+  rule instead — see "MTP action-queue tabs" below — since a CIO-group
+  user needs to see a line the moment it reaches them even without being
+  tagged or a team member.
+- **Finance Admin → Inflation Rate** (sidebar section visible only to the
+  Finance Admin group): a 2-row table, **Non IT Item** (seeded 3%) and
+  **IT Item** (seeded 5%) — Finance Admin can change the values only. These
+  rates drive both the auto-growth of recurring MTP/Block lines and the
+  MTP Variance justification threshold below.
+- **Medium Term Projection → MTP Variance**: every MTP line whose current
+  figures have diverged from what they were right after the last MTP
+  rollover (or, for a brand-new line, from an all-zero baseline) by more
+  than the Inflation Rate for at least one Financial Year. Columns include
+  Status, Justification, Description, Account, Sub Account, Ops/Dev,
+  Source of Funding, Cost Centre, Project Title, then per FY: `FYxx
+  (Previous)`, `FYxx`, `FYxx Variance Amount`, `FYxx Variance %`, `FYxx
+  Justification`. Only the **earliest** flagged year needs an actual
+  justification (editable by the owning Branch Rep); a later flagged year
+  needs none. A line can't be submitted while its required justification
+  is still empty.
+- **Medium Term Projection action-queue tabs** — Review Phase and Approval
+  Phase are visible to everyone, but only ever show a line the moment it's
+  actually that viewer's turn to act on it (Review/Clarification statuses
+  in Review Phase; Pending Approval in Approval Phase). **Clarification
+  (FO)** and **Clarification (FM)** (Finance Manager only) give her
+  visibility into the whole clarification pipeline — (FO) shows lines
+  still with Finance Officer (read-only), (FM) shows lines now routed to
+  her (actionable, same as Review Phase). **Fin Supported** lists every
+  Approved line's rounded duplicate; Finance Officer/Finance Manager can
+  edit its figures (never the original line). **MTP with Inactive Users**
+  is a cleanup view of MTP lines tagged to a user who is now Inactive.
+- **Simulation Date** (top bar, next to Simulation Year) is a global
+  "pretend today is this date" setting with a native calendar picker and a
+  **Today** button to snap back to the real current date. Budget Period's
+  Closed for Submission transition is evaluated against this date, not the
+  browser's real clock, so you can test deadline behavior without waiting.
 - **Simulation Date** (top bar, next to Simulation Year) is a global
   "pretend today is this date" setting with a native calendar picker and a
   **Today** button to snap back to the real current date. Budget Period's
@@ -281,6 +326,42 @@ so a path-based router would 404 on refresh of a deep link.)
   that exercise, per the spec's example — Annual Budget and Block Budget
   opening only changes their status/dates; their existing lines are left as
   they are, with no prior-year carry-forward.
+- The new Draft/Review/Clarification/Pending Approval/Approved workflow
+  (confirmed before building this) replaces the old two-round chain for
+  **every** budget kind (MTP, RB, OB, Block), not just MTP, even though the
+  spec described it in an MTP-specific context.
+  CIO acts by **group membership** (like Finance Officer/Finance
+  Manager/Finance Admin), not as a per-line picked person like Reviewer
+  1/2/Approver — there's no "CIO" dropdown, any CIO-group user can act.
+  Reviewer 2 is required to be a different person from Reviewer 1
+  (confirmed before building this). CIO's "support" at Pending Approval
+  for an IT project is treated as equivalent to the Approver's "approve"
+  for a non-IT one — both are terminal, both trigger the Fin Supported
+  duplicate — since the spec described them as alternative branches, not
+  a sequential CIO-then-Approver chain.
+  "MTP with inactive users" (confirmed before building this) means MTP
+  lines tagged to a now-Inactive user, as a Finance/IT Admin-style cleanup
+  view; it, Review Phase, Approval Phase and Fin Supported are all built
+  scoped to MTP only (per their placement under the Medium Term Projection
+  sidebar header), even though the underlying workflow is now shared by
+  every kind — equivalent queue tabs for RB/OB/Block aren't built yet.
+- MTP Variance's "last FY" baseline (`previousPeriods`) is frozen the
+  moment a line is created (all zeros, matching "last FY the amount is 0")
+  or the moment Medium Term Projection rolls over (a copy of the
+  just-rolled figures) — not the literal prior fiscal year's submission by
+  calendar lookup. A line's required justification is also enforced: it
+  can't be submitted for Review (or resubmitted after a Clarification
+  reject) while its earliest flagged year's justification is still empty.
+- Review Phase and Approval Phase (and, by extension, Clarification (FM))
+  needed a visibility rule different from `canSeeLine`'s tagged/team-member
+  default, since a CIO-group user must see a line the instant it reaches
+  Pending Approval (CIO) even without being tagged on it or a project team
+  member — see `budgetLines.listActionQueue` in `client/src/api.ts`. A
+  project's own MTP tab still uses the ordinary `canSeeLine` rule, so a
+  CIO-group user who isn't tagged/a team member won't see the line there,
+  only via Approval Phase — this seemed the more defensible reading of
+  "these lines only appear when it requires the action of the particular
+  role" than widening `canSeeLine` itself for CIO specifically.
 - Authentication is out of scope; the Impersonate dropdown stands in for
   login, and anyone can impersonate anyone (there's no login/password of any
   kind gating who can pick which User).

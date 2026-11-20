@@ -135,27 +135,25 @@ export interface BudgetPeriod {
   updatedAt: string;
 }
 
+// A single linear chain (no more two-round split): Branch Rep drafts and
+// submits -> Reviewer 1 -> Finance Officer -> Finance Manager -> Reviewer 2
+// -> (CIO if an IT project, else Approver) -> Approved. Any Clarification
+// reject bounces back exactly one step for Branch Rep/Finance Officer to
+// clarify and resubmit; any Pending Approval reject restarts the whole line
+// from Branch Rep Draft.
 export type WorkflowStep =
-  | 'BRANCH_REP_DRAFT'
-  | 'REVIEWER1_R1'
-  | 'FIN_OFFICER_R1'
-  | 'FIN_MANAGER_R1'
-  | 'BRANCH_REP_READY'
-  | 'REVIEWER1_R2'
-  | 'REVIEWER2_R2'
-  | 'APPROVER_R2'
-  | 'FIN_OFFICER_R2'
-  | 'FIN_MANAGER_R2'
-  | 'DONE';
+  | 'DRAFT'
+  | 'REVIEW'
+  | 'CLARIFICATION_FO'
+  | 'CLARIFICATION_BRANCH_REP'
+  | 'CLARIFICATION_FM'
+  | 'CLARIFICATION_FO_REWORK'
+  | 'PENDING_APPROVAL_REVIEWER2'
+  | 'PENDING_APPROVAL_CIO'
+  | 'PENDING_APPROVAL_APPROVER'
+  | 'APPROVED';
 
-export type BudgetLineStatus =
-  | 'New'
-  | 'Draft'
-  | 'Pending Review'
-  | 'Clarification'
-  | 'Ready for Approval'
-  | 'Pending Approval'
-  | 'Fin Supported';
+export type BudgetLineStatus = 'Draft' | 'Review' | 'Clarification' | 'Pending Approval' | 'Approved';
 
 export type OpsOrDev = 'Ops' | 'Dev';
 export type YesNo = 'Yes' | 'No';
@@ -178,7 +176,6 @@ export interface BudgetLine {
   // project later (and detached again) via its Project Title cell there.
   projectId: string | null;
   kind: BudgetKind;
-  origin: 'new' | 'carried_forward';
   step: WorkflowStep;
   status: BudgetLineStatus; // computed
   description: string;
@@ -195,12 +192,60 @@ export interface BudgetLine {
   budgetType: BudgetType | null;
   periods: Record<string, number>;
   total: number; // computed
+  // MTP-only (see lib/variance.ts): each period's value as of the last
+  // rollover/creation, frozen until the next one — any edit a Branch Rep
+  // makes afterward is what MTP Variance compares against. A brand-new
+  // line (no Project Profile history) gets an all-zero snapshot, so any
+  // nonzero figure they enter is automatically a 100%+ variance.
+  previousPeriods: Record<string, number>;
+  // FY key -> justification text. Only ever meaningfully required for the
+  // earliest FY whose variance currently exceeds the Inflation Rate
+  // threshold (see lib/variance.ts) — entries for other years are kept
+  // but ignored if the required year shifts.
+  justifications: Record<string, string>;
   assignedToUserId: string;
   reviewer1UserId: string | null;
   reviewer2UserId: string | null;
   approverUserId: string | null;
   financeOfficerUserId: string | null;
   history: HistoryEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------- Inflation Rate (Finance Admin) ----------
+// Drives both the recurring-line auto-growth on MTP/Block lines and the
+// MTP Variance justification threshold (a year's change vs last FY is
+// flagged once it exceeds the matching rate).
+
+export type InflationItem = 'Non IT Item' | 'IT Item';
+
+export interface InflationRate {
+  id: string;
+  item: InflationItem;
+  value: number; // a percentage, e.g. 3 means 3%
+  updatedAt: string;
+}
+
+// ---------- Fin Supported (duplicated on final approval) ----------
+// A snapshot taken the moment a line reaches APPROVED: its own record,
+// with periods rounded to the nearest 100 (amounts under 100 are left
+// alone). Editing it (Finance Officer/Finance Manager only) never touches
+// the original BudgetLine, which stays exactly as it was approved.
+
+export interface FinSupportedLine {
+  id: string;
+  sourceBudgetLineId: string;
+  projectId: string | null;
+  kind: BudgetKind;
+  description: string;
+  account: string;
+  subAcct: string;
+  opsOrDev: OpsOrDev | '';
+  costCentre: string;
+  fundingEntryId: string | null;
+  itProject: YesNo | '';
+  periods: Record<string, number>;
   createdAt: string;
   updatedAt: string;
 }

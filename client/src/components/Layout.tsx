@@ -67,10 +67,23 @@ function SimulationDateControl() {
   );
 }
 
-function NavItem({ to, children, onNavigate }: { to: string; children: ReactNode; onNavigate?: () => void }) {
+function NavItem({
+  to,
+  children,
+  onNavigate,
+  end,
+}: {
+  to: string;
+  children: ReactNode;
+  onNavigate?: () => void;
+  // NavLink's default matching is prefix-based, so "/projects" would also
+  // highlight while on "/projects/requests" unless told to match exactly.
+  end?: boolean;
+}) {
   return (
     <NavLink
       to={to}
+      end={end}
       onClick={onNavigate}
       className={({ isActive }) =>
         `block rounded px-3 py-2 text-sm ${isActive ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`
@@ -89,13 +102,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { currentUser } = useAuth();
   const superAdmin = !!currentUser && isSuperAdmin(currentUser);
   const isFinanceAdmin = superAdmin || (currentUser?.groups.includes('Finance Admin') ?? false);
+  const isFinanceManager = superAdmin || (currentUser?.groups.includes('Finance Manager') ?? false);
 
   return (
     <>
       <div className="px-5 py-5 text-xl font-bold tracking-wide text-white">ORION</div>
       <nav className="mt-2 flex-1 overflow-y-auto px-3">
         <NavHeader>Project Profile</NavHeader>
-        <NavItem to="/projects" onNavigate={onNavigate}>
+        <NavItem to="/projects" end onNavigate={onNavigate}>
           Project Profile
         </NavItem>
         <NavItem to="/projects/requests" onNavigate={onNavigate}>
@@ -105,6 +119,31 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <NavHeader>Medium Term Projection</NavHeader>
         <NavItem to="/mtp/budget-line-item" onNavigate={onNavigate}>
           Budget Line Item
+        </NavItem>
+        <NavItem to="/mtp/variance" onNavigate={onNavigate}>
+          MTP Variance
+        </NavItem>
+        <NavItem to="/mtp/review-phase" onNavigate={onNavigate}>
+          Review Phase
+        </NavItem>
+        {isFinanceManager && (
+          <>
+            <NavItem to="/mtp/clarification-fo" onNavigate={onNavigate}>
+              Clarification (FO)
+            </NavItem>
+            <NavItem to="/mtp/clarification-fm" onNavigate={onNavigate}>
+              Clarification (FM)
+            </NavItem>
+          </>
+        )}
+        <NavItem to="/mtp/approval-phase" onNavigate={onNavigate}>
+          Approval Phase
+        </NavItem>
+        <NavItem to="/mtp/fin-supported" onNavigate={onNavigate}>
+          Fin Supported
+        </NavItem>
+        <NavItem to="/mtp/inactive-users" onNavigate={onNavigate}>
+          MTP with Inactive Users
         </NavItem>
 
         {isFinanceAdmin && (
@@ -121,6 +160,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             </NavItem>
             <NavItem to="/finance-admin/budget-period" onNavigate={onNavigate}>
               Budget Period
+            </NavItem>
+            <NavItem to="/finance-admin/inflation-rate" onNavigate={onNavigate}>
+              Inflation Rate
             </NavItem>
           </>
         )}

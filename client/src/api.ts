@@ -6,12 +6,15 @@
 // AuthContext.tsx), the same way a real server would enforce it against a
 // logged-in session.
 import { getDb, nextId, saveDb, type StoredBudgetLine } from './local/db';
-import { applyRecurringInflation, emptyPeriods, fyOfDate, periodKeys, sumPeriods } from './lib/calc';
+import { applyRecurringInflation, emptyPeriods, fyOfDate, periodKeys, roundToNearestHundred, sumPeriods, type InflationRates } from './lib/calc';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind, EXERCISE_LABEL } from './lib/budgetPeriod';
+import { justificationSatisfied } from './lib/variance';
 import {
   canApprove,
   canCreateProject,
+  canEditFinSupported,
   canManageFinanceAdminCatalog,
+  canReject,
   canSeeLine,
   canSubmit,
   isEditableByBranchRep,
@@ -20,8 +23,10 @@ import {
   isOwningBranchRep,
   isSuperAdmin,
   nextOnApprove,
+  nextOnReject,
   nextOnSubmit,
   statusFor,
+  STEP_ACTOR,
   userCanAct,
 } from './lib/workflow';
 import type {
@@ -31,6 +36,7 @@ import type {
   BudgetLine,
   BudgetPeriod,
   CostCentreCode,
+  FinSupportedLine,
   FundingEntry,
   FundingSource,
   Group,
@@ -85,6 +91,16 @@ function getBudgetPeriod(type: BudgetExerciseType): BudgetPeriod {
   return period;
 }
 
+// Live rates from Finance Admin's Inflation Rate table, as fractions —
+// drives both recurring-line auto-growth and the MTP Variance
+// justification threshold.
+function getInflationRates(): InflationRates {
+  const rows = getDb().inflationRates;
+  const nonIt = rows.find((r) => r.item === 'Non IT Item')?.value ?? 3;
+  const it = rows.find((r) => r.item === 'IT Item')?.value ?? 5;
+  return { nonItRate: nonIt / 100, itRate: it / 100 };
+}
+
 // Throws if the acting user isn't allowed to create/edit/submit/approve a
 // budget line of this kind right now, given its budget exercise's current
 // status (Draft/Open impose no extra restriction; Closed for Submission
@@ -135,10 +151,14 @@ function pushHistory(line: StoredBudgetLine, byUserId: string, action: string, f
 // formula, also reproduces the correct carried-over values for every
 // overlapping year); for a non-recurring line the new year starts at 0,
 // same as any other blank period. Each line's workflow also resets to
-// BRANCH_REP_DRAFT so the Branch Rep can edit it for the new cycle.
+// Draft so the Branch Rep can edit it for the new cycle, and
+// `previousPeriods` is frozen to this exact just-rolled snapshot — MTP
+// Variance only flags a year once the Branch Rep's own edits make it
+// diverge from here, not the rollover itself.
 function rollMtpLinesForward(newStartYear: number, byUserId: string) {
   const db = getDb();
   const newKeys = periodKeys('MTP', newStartYear);
+  const rates = getInflationRates();
   for (const line of db.budgetLines) {
     if (line.kind !== 'MTP') continue;
     const oldPeriods = line.periods;
@@ -146,14 +166,16 @@ function rollMtpLinesForward(newStartYear: number, byUserId: string) {
     if (line.recurring === 'Yes') {
       const oldFirstKey = Object.keys(oldPeriods)[0];
       const baseAmount = Number(oldPeriods[newKeys[0]] ?? oldPeriods[oldFirstKey] ?? 0);
-      newPeriods = applyRecurringInflation('MTP', newStartYear, 'Yes', line.itProject, baseAmount);
+      newPeriods = applyRecurringInflation('MTP', newStartYear, 'Yes', line.itProject, baseAmount, rates);
     } else {
       newPeriods = {};
       for (const key of newKeys) newPeriods[key] = oldPeriods[key] ?? 0;
     }
     line.periods = newPeriods;
+    line.previousPeriods = { ...newPeriods };
+    line.justifications = {};
     const from = line.step;
-    line.step = 'BRANCH_REP_DRAFT';
+    line.step = 'DRAFT';
     pushHistory(line, byUserId, 'rollover', from, line.step, `Rolled forward to the ${newKeys[0]}–${newKeys[newKeys.length - 1]} Medium Term Projection window`);
     line.updatedAt = now();
   }
@@ -276,6 +298,43 @@ export const api = {
         getDb().costCentres.push(costCentre);
         saveDb();
         return costCentre;
+      }),
+  },
+
+  // Non IT Item / IT Item percentages — drives both recurring-line
+  // auto-growth and the MTP Variance justification threshold. Finance
+  // Admin can only change the two existing rows' values, not add/remove.
+  inflationRates: {
+    list: () => run(() => getDb().inflationRates),
+    update: (id: string, value: number) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can change the Inflation Rate');
+        if (!Number.isFinite(value) || value < 0) throw new Error('Value must be a non-negative percentage');
+        const rate = getDb().inflationRates.find((r) => r.id === id);
+        if (!rate) throw new Error('Not found');
+        rate.value = value;
+        rate.updatedAt = now();
+        saveDb();
+        return rate;
+      }),
+  },
+
+  // The Fin Supported duplicate created when a line reaches APPROVED (see
+  // budgetLines.approve) — editable only by Finance Officer/Finance
+  // Manager, and editing it never touches the original BudgetLine.
+  finSupportedLines: {
+    list: () => run(() => getDb().finSupportedLines),
+    update: (id: string, periods: Record<string, number>) =>
+      run(() => {
+        const user = requireUser();
+        if (!canEditFinSupported(user)) throw new Error('Only Finance Officer or Finance Manager can edit a Fin Supported line');
+        const line = getDb().finSupportedLines.find((f) => f.id === id);
+        if (!line) throw new Error('Not found');
+        line.periods = { ...line.periods, ...periods };
+        line.updatedAt = now();
+        saveDb();
+        return line;
       }),
   },
 
@@ -479,7 +538,22 @@ export const api = {
           .filter((l) => canSeeLine(l, user, l.projectId ? teamMembersByProject.get(l.projectId) ?? [] : []))
           .map(withComputed);
       }),
-    create: (projectId: string, kind: BudgetKind, simulationYear: number, origin: 'new' | 'carried_forward' = 'new') =>
+    // Action-queue view for Review Phase / Approval Phase: every line of
+    // this kind the acting user can act on *right now*, regardless of
+    // tagging or team membership — needed because a CIO-group user (a
+    // group-based actor, not a tagged one) must see a line the moment it
+    // reaches Pending Approval (CIO), even if they were never tagged or
+    // added as a team member.
+    listActionQueue: (kind: BudgetKind) =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        return db.budgetLines
+          .filter((l) => l.kind === kind)
+          .filter((l) => userCanAct(l, user, owningProjectOf(l)))
+          .map(withComputed);
+      }),
+    create: (projectId: string, kind: BudgetKind, simulationYear: number) =>
       run(() => {
         const user = requireUser();
         const project = getProjectOrThrow(projectId);
@@ -489,8 +563,7 @@ export const api = {
           id: nextId('line'),
           projectId: project.id,
           kind,
-          origin,
-          step: 'BRANCH_REP_DRAFT',
+          step: 'DRAFT',
           description: '',
           opsOrDev: '',
           account: '',
@@ -504,6 +577,8 @@ export const api = {
           basis: '',
           budgetType: kind === 'RB' || kind === 'OB' ? kind : null,
           periods: emptyPeriods(kind, simulationYear),
+          previousPeriods: emptyPeriods(kind, simulationYear),
+          justifications: {},
           assignedToUserId: user.id,
           reviewer1UserId: null,
           reviewer2UserId: null,
@@ -542,8 +617,7 @@ export const api = {
           id: nextId('line'),
           projectId,
           kind: 'MTP',
-          origin: 'new',
-          step: 'BRANCH_REP_DRAFT',
+          step: 'DRAFT',
           description: '',
           opsOrDev: '',
           account: '',
@@ -556,7 +630,12 @@ export const api = {
           buildOrBuy: '',
           basis: '',
           budgetType: null,
+          // A brand-new line has no prior submission to compare against —
+          // last FY's amount is taken as 0, so any figure the Branch Rep
+          // enters is an unconditional variance (see lib/variance.ts).
           periods: emptyPeriods('MTP', simulationYear),
+          previousPeriods: emptyPeriods('MTP', simulationYear),
+          justifications: {},
           assignedToUserId,
           reviewer1UserId: null,
           reviewer2UserId: null,
@@ -621,31 +700,40 @@ export const api = {
           'buildOrBuy',
           'basis',
           'reviewer1UserId',
-          'reviewer2UserId',
           'approverUserId',
           'financeOfficerUserId',
         ] as const;
         for (const field of EDITABLE_FIELDS) {
           if (field in data) (line as any)[field] = (data as any)[field];
         }
+        if ('reviewer2UserId' in data) {
+          if (data.reviewer2UserId && data.reviewer2UserId === line.reviewer1UserId) {
+            throw new Error('Reviewer 2 must be a different person from Reviewer 1');
+          }
+          line.reviewer2UserId = data.reviewer2UserId ?? null;
+        }
         if (!line.itProject || line.itProject !== 'Yes') {
           line.ictExp = '';
           line.buildOrBuy = '';
         }
+        if ('justifications' in data && data.justifications) {
+          line.justifications = { ...line.justifications, ...data.justifications };
+        }
 
+        const rates = getInflationRates();
         const keys = periodKeys(line.kind, simulationYear);
         if ('periods' in data) {
           const incoming = data.periods as Record<string, number>;
           if (line.recurring === 'Yes') {
             const baseAmount = Number(incoming[keys[0]] ?? line.periods[keys[0]] ?? 0);
-            line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount);
+            line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount, rates);
           } else {
             line.periods = { ...emptyPeriods(line.kind, simulationYear), ...line.periods, ...incoming };
           }
         } else if ('recurring' in data || 'itProject' in data) {
           if (line.recurring === 'Yes') {
             const baseAmount = Number(line.periods[keys[0]] ?? 0);
-            line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount);
+            line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount, rates);
           }
         }
 
@@ -661,11 +749,14 @@ export const api = {
         if (!line) throw new Error('Not found');
         const project = owningProjectOf(line);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can delete this line');
-        if (line.step !== 'BRANCH_REP_DRAFT') throw new Error('Only lines still in Draft can be deleted');
+        if (line.step !== 'DRAFT') throw new Error('Only lines still in Draft can be deleted');
         requireBudgetPeriodEditable(line.kind, user);
         db.budgetLines = db.budgetLines.filter((l) => l.id !== id);
         saveDb();
       }),
+    // Branch Rep moves the line forward: Draft -> Review (first
+    // submission) or Clarification (Branch Rep) -> Clarification (Finance
+    // Officer) (after clarifying a Finance Officer reject).
     submit: (id: string) =>
       run(() => {
         const user = requireUser();
@@ -676,9 +767,11 @@ export const api = {
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can submit this line');
         if (!canSubmit(line.step)) throw new Error('This line cannot be submitted from its current status');
         requireBudgetPeriodEditable(line.kind, user);
-        if (!line.reviewer1UserId) throw new Error('Reviewer 1 must be selected before submitting');
-        if (line.step === 'BRANCH_REP_READY' && (!line.reviewer2UserId || !line.approverUserId)) {
-          throw new Error('Reviewer 1, Reviewer 2 and Approver must all be selected before submitting for final approval');
+        if (!line.reviewer1UserId || !line.reviewer2UserId || !line.approverUserId) {
+          throw new Error('Reviewer 1, Reviewer 2 and Approver must all be selected before submitting');
+        }
+        if (!justificationSatisfied(line, getInflationRates())) {
+          throw new Error('This line has a variance requiring an MTP Variance justification before it can be submitted');
         }
         const from = line.step;
         line.step = nextOnSubmit(line.step);
@@ -687,6 +780,9 @@ export const api = {
         saveDb();
         return withComputed(line);
       }),
+    // The current actor (Reviewer1/FinOfficer/FinManager/Reviewer2/CIO/
+    // Approver) supports the line, moving it to the next step. Reaching
+    // APPROVED also duplicates it into Fin Supported with rounded figures.
     approve: (id: string) =>
       run(() => {
         const user = requireUser();
@@ -695,30 +791,55 @@ export const api = {
         if (!line) throw new Error('Not found');
         const project = owningProjectOf(line);
         if (!canApprove(line.step)) throw new Error('This line is not awaiting approval');
-        if (!userCanAct(line, user, project)) throw new Error('You are not the assigned approver for this step');
+        if (!userCanAct(line, user, project)) throw new Error('You are not the assigned actor for this step');
         requireBudgetPeriodEditable(line.kind, user);
-        if (line.step === 'FIN_OFFICER_R1' || line.step === 'FIN_OFFICER_R2') {
+        if (STEP_ACTOR[line.step] === 'FinOfficer') {
           line.financeOfficerUserId = user.id;
         }
         const from = line.step;
-        line.step = nextOnApprove(line.step);
+        line.step = nextOnApprove(line.step, line.itProject);
         pushHistory(line, user.id, 'approve', from, line.step);
         line.updatedAt = now();
+        if (line.step === 'APPROVED') {
+          const roundedPeriods: Record<string, number> = {};
+          for (const [key, value] of Object.entries(line.periods)) roundedPeriods[key] = roundToNearestHundred(Number(value) || 0);
+          const finSupported: FinSupportedLine = {
+            id: nextId('finsupported'),
+            sourceBudgetLineId: line.id,
+            projectId: line.projectId,
+            kind: line.kind,
+            description: line.description,
+            account: line.account,
+            subAcct: line.subAcct,
+            opsOrDev: line.opsOrDev,
+            costCentre: line.costCentre,
+            fundingEntryId: line.fundingEntryId,
+            itProject: line.itProject,
+            periods: roundedPeriods,
+            createdAt: now(),
+            updatedAt: now(),
+          };
+          db.finSupportedLines.push(finSupported);
+        }
         saveDb();
         return withComputed(line);
       }),
-    return: (id: string, note?: string) =>
+    // The current actor rejects: Review/Pending Approval bounce back to
+    // Branch Rep Draft; a Clarification reject bounces back exactly one
+    // step for Branch Rep/Finance Officer to clarify and resubmit.
+    reject: (id: string, note?: string) =>
       run(() => {
         const user = requireUser();
         const db = getDb();
         const line = db.budgetLines.find((l) => l.id === id);
         if (!line) throw new Error('Not found');
         const project = owningProjectOf(line);
-        if (!userCanAct(line, user, project)) throw new Error('You are not the assigned approver for this step');
+        if (!canReject(line.step)) throw new Error('This line cannot be rejected from its current status');
+        if (!userCanAct(line, user, project)) throw new Error('You are not the assigned actor for this step');
         requireBudgetPeriodEditable(line.kind, user);
         const from = line.step;
-        line.step = 'BRANCH_REP_DRAFT';
-        pushHistory(line, user.id, 'return', from, line.step, note);
+        line.step = nextOnReject(line.step);
+        pushHistory(line, user.id, 'reject', from, line.step, note);
         line.updatedAt = now();
         saveDb();
         return withComputed(line);

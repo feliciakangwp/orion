@@ -54,7 +54,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
   }, [lines, kind, simulationYear]);
 
   async function addNew() {
-    await api.budgetLines.create(project.id, kind, simulationYear, 'new');
+    await api.budgetLines.create(project.id, kind, simulationYear);
     reload();
   }
 

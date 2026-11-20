@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
-import { canApprove, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
+import { canApprove, canReject, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
 import type { AccountCode, BudgetLine, CostCentreCode, FundingEntry, FundingSource, Project, User } from '../types';
 
 // A line's owning Branch Rep for ownership/edit checks — the real project's
@@ -103,10 +103,10 @@ export function BudgetLineRow({
       setError((e as Error).message);
     }
   }
-  async function sendBack() {
+  async function reject() {
     setError(null);
     try {
-      const updated = await api.budgetLines.return(line.id);
+      const updated = await api.budgetLines.reject(line.id);
       onServerUpdate(updated);
     } catch (e) {
       setError((e as Error).message);
@@ -323,11 +323,13 @@ export function BudgetLineRow({
           onChange={(e) => patch({ reviewer2UserId: e.target.value || null })}
         >
           <option value="">—</option>
-          {reviewerOptions.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
+          {reviewerOptions
+            .filter((u) => u.id !== line.reviewer1UserId)
+            .map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
         </select>
       </td>
       <td className="px-2 py-2">
@@ -372,12 +374,12 @@ export function BudgetLineRow({
               Approve
             </Button>
           )}
-          {canAct && canApprove(line.step) && (
-            <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={sendBack}>
-              Return
+          {canAct && canReject(line.step) && (
+            <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={reject}>
+              Reject
             </Button>
           )}
-          {isBranchRepOwner && periodEditable && line.step === 'BRANCH_REP_DRAFT' && (
+          {isBranchRepOwner && periodEditable && line.step === 'DRAFT' && (
             <Button className="!px-2 !py-1 text-xs" variant="danger" onClick={remove}>
               Delete
             </Button>

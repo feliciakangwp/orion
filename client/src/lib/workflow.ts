@@ -1,62 +1,85 @@
-import type { BudgetLine, BudgetLineStatus, Group, User, WorkflowStep } from '../types';
+import type { BudgetLine, BudgetLineStatus, Group, User, WorkflowStep, YesNo } from '../types';
 
-export const STEP_STATUS: Record<WorkflowStep, (origin: BudgetLine['origin']) => BudgetLineStatus> = {
-  BRANCH_REP_DRAFT: (origin) => (origin === 'new' ? 'New' : 'Draft'),
-  REVIEWER1_R1: () => 'Pending Review',
-  FIN_OFFICER_R1: () => 'Clarification',
-  FIN_MANAGER_R1: () => 'Clarification',
-  BRANCH_REP_READY: () => 'Ready for Approval',
-  REVIEWER1_R2: () => 'Pending Approval',
-  REVIEWER2_R2: () => 'Pending Approval',
-  APPROVER_R2: () => 'Pending Approval',
-  FIN_OFFICER_R2: () => 'Pending Approval',
-  FIN_MANAGER_R2: () => 'Pending Approval',
-  DONE: () => 'Fin Supported',
+export const STEP_STATUS: Record<WorkflowStep, BudgetLineStatus> = {
+  DRAFT: 'Draft',
+  REVIEW: 'Review',
+  CLARIFICATION_FO: 'Clarification',
+  CLARIFICATION_BRANCH_REP: 'Clarification',
+  CLARIFICATION_FM: 'Clarification',
+  CLARIFICATION_FO_REWORK: 'Clarification',
+  PENDING_APPROVAL_REVIEWER2: 'Pending Approval',
+  PENDING_APPROVAL_CIO: 'Pending Approval',
+  PENDING_APPROVAL_APPROVER: 'Pending Approval',
+  APPROVED: 'Approved',
 };
 
-export function statusFor(line: Pick<BudgetLine, 'step' | 'origin'>): BudgetLineStatus {
-  return STEP_STATUS[line.step](line.origin);
+export function statusFor(line: Pick<BudgetLine, 'step'>): BudgetLineStatus {
+  return STEP_STATUS[line.step];
 }
 
-export type ActorRole = 'BranchRep' | 'Reviewer1' | 'Reviewer2' | 'Approver' | 'FinOfficer' | 'FinManager' | null;
+export type ActorRole = 'BranchRep' | 'Reviewer1' | 'Reviewer2' | 'Approver' | 'FinOfficer' | 'FinManager' | 'CIO' | null;
 
 export const STEP_ACTOR: Record<WorkflowStep, ActorRole> = {
-  BRANCH_REP_DRAFT: 'BranchRep',
-  REVIEWER1_R1: 'Reviewer1',
-  FIN_OFFICER_R1: 'FinOfficer',
-  FIN_MANAGER_R1: 'FinManager',
-  BRANCH_REP_READY: 'BranchRep',
-  REVIEWER1_R2: 'Reviewer1',
-  REVIEWER2_R2: 'Reviewer2',
-  APPROVER_R2: 'Approver',
-  FIN_OFFICER_R2: 'FinOfficer',
-  FIN_MANAGER_R2: 'FinManager',
-  DONE: null,
+  DRAFT: 'BranchRep',
+  REVIEW: 'Reviewer1',
+  CLARIFICATION_FO: 'FinOfficer',
+  CLARIFICATION_BRANCH_REP: 'BranchRep',
+  CLARIFICATION_FM: 'FinManager',
+  CLARIFICATION_FO_REWORK: 'FinOfficer',
+  PENDING_APPROVAL_REVIEWER2: 'Reviewer2',
+  PENDING_APPROVAL_CIO: 'CIO',
+  PENDING_APPROVAL_APPROVER: 'Approver',
+  APPROVED: null,
 };
 
+// Every "support/approve" transition except the one branching step
+// (Reviewer 2 routes to CIO for an IT project, Approver otherwise — see
+// nextOnApprove below).
 const APPROVE_NEXT: Partial<Record<WorkflowStep, WorkflowStep>> = {
-  REVIEWER1_R1: 'FIN_OFFICER_R1',
-  FIN_OFFICER_R1: 'FIN_MANAGER_R1',
-  FIN_MANAGER_R1: 'BRANCH_REP_READY',
-  REVIEWER1_R2: 'REVIEWER2_R2',
-  REVIEWER2_R2: 'APPROVER_R2',
-  APPROVER_R2: 'FIN_OFFICER_R2',
-  FIN_OFFICER_R2: 'FIN_MANAGER_R2',
-  FIN_MANAGER_R2: 'DONE',
+  REVIEW: 'CLARIFICATION_FO',
+  CLARIFICATION_FO: 'CLARIFICATION_FM',
+  CLARIFICATION_FO_REWORK: 'CLARIFICATION_FM',
+  CLARIFICATION_FM: 'PENDING_APPROVAL_REVIEWER2',
+  PENDING_APPROVAL_CIO: 'APPROVED',
+  PENDING_APPROVAL_APPROVER: 'APPROVED',
 };
 
 export function canApprove(step: WorkflowStep): boolean {
-  return step in APPROVE_NEXT;
+  return step in APPROVE_NEXT || step === 'PENDING_APPROVAL_REVIEWER2';
 }
 
-export function nextOnApprove(step: WorkflowStep): WorkflowStep {
+export function nextOnApprove(step: WorkflowStep, itProject: YesNo | ''): WorkflowStep {
+  if (step === 'PENDING_APPROVAL_REVIEWER2') return itProject === 'Yes' ? 'PENDING_APPROVAL_CIO' : 'PENDING_APPROVAL_APPROVER';
   const next = APPROVE_NEXT[step];
   if (!next) throw new Error(`No approval transition from step ${step}`);
   return next;
 }
 
+// A Review/Clarification reject bounces back exactly one step for Branch
+// Rep or Finance Officer to clarify and resubmit; a Pending Approval
+// reject (Reviewer 2, CIO, or Approver) restarts the whole line from
+// Branch Rep Draft.
+const REJECT_NEXT: Partial<Record<WorkflowStep, WorkflowStep>> = {
+  REVIEW: 'DRAFT',
+  CLARIFICATION_FO: 'CLARIFICATION_BRANCH_REP',
+  CLARIFICATION_FM: 'CLARIFICATION_FO_REWORK',
+  PENDING_APPROVAL_REVIEWER2: 'DRAFT',
+  PENDING_APPROVAL_CIO: 'DRAFT',
+  PENDING_APPROVAL_APPROVER: 'DRAFT',
+};
+
+export function canReject(step: WorkflowStep): boolean {
+  return step in REJECT_NEXT;
+}
+
+export function nextOnReject(step: WorkflowStep): WorkflowStep {
+  const next = REJECT_NEXT[step];
+  if (!next) throw new Error(`No reject transition from step ${step}`);
+  return next;
+}
+
 export function isEditableByBranchRep(step: WorkflowStep): boolean {
-  return step === 'BRANCH_REP_DRAFT' || step === 'BRANCH_REP_READY';
+  return step === 'DRAFT' || step === 'CLARIFICATION_BRANCH_REP';
 }
 
 export function canSubmit(step: WorkflowStep): boolean {
@@ -64,8 +87,8 @@ export function canSubmit(step: WorkflowStep): boolean {
 }
 
 export function nextOnSubmit(step: WorkflowStep): WorkflowStep {
-  if (step === 'BRANCH_REP_DRAFT') return 'REVIEWER1_R1';
-  if (step === 'BRANCH_REP_READY') return 'REVIEWER1_R2';
+  if (step === 'DRAFT') return 'REVIEW';
+  if (step === 'CLARIFICATION_BRANCH_REP') return 'CLARIFICATION_FO';
   throw new Error(`No submit transition from step ${step}`);
 }
 
@@ -97,7 +120,7 @@ export function canCreateProject(user: Pick<User, 'groups'>): boolean {
 }
 
 // Governs all three Finance Admin catalogs: Source of Funding, Account, and
-// Cost Centre.
+// Cost Centre — plus the Inflation Rate table.
 export function canManageFinanceAdminCatalog(user: Pick<User, 'groups'>): boolean {
   return isSuperAdmin(user) || inGroup(user, 'Finance Admin');
 }
@@ -110,13 +133,19 @@ export function isOwningBranchRep(user: Pick<User, 'id' | 'groups'>, project: { 
   return user.id === project.openedByUserId && inGroup(user, 'Branch Rep');
 }
 
+// Edits the duplicated Fin Supported record (not the original line) —
+// Finance Officer/Finance Manager only.
+export function canEditFinSupported(user: Pick<User, 'groups'>): boolean {
+  return isSuperAdmin(user) || inGroup(user, 'Finance Officer') || inGroup(user, 'Finance Manager');
+}
+
 type ActableLine = Pick<BudgetLine, 'step' | 'reviewer1UserId' | 'reviewer2UserId' | 'approverUserId'>;
 
 // Resolve whether a given user is permitted to act as the required actor
 // role for this budget line right now. There is no department scoping:
 // Reviewer1/Reviewer2/Approver are exact-user matches (whoever was picked
-// into that slot); Finance Officer/Finance Manager match by group, project
-// (and department) agnostic. Super Admin can act as any of these.
+// into that slot); Finance Officer/Finance Manager/CIO match by group,
+// project (and department) agnostic. Super Admin can act as any of these.
 export function userCanAct(line: ActableLine, user: User, project: { openedByUserId: string }): boolean {
   if (isSuperAdmin(user)) return true;
   const role = STEP_ACTOR[line.step];
@@ -134,6 +163,8 @@ export function userCanAct(line: ActableLine, user: User, project: { openedByUse
       return inGroup(user, 'Finance Officer');
     case 'FinManager':
       return inGroup(user, 'Finance Manager');
+    case 'CIO':
+      return inGroup(user, 'CIO');
     default:
       return false;
   }

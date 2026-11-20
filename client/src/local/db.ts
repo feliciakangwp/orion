@@ -5,9 +5,12 @@ import type {
   BudgetLine,
   BudgetPeriod,
   CostCentreCode,
+  FinSupportedLine,
   FundingEntry,
   FundingSource,
   Group,
+  InflationItem,
+  InflationRate,
   TeamMember,
   Project,
   User,
@@ -22,18 +25,22 @@ export interface DbShape {
   fundingSources: FundingSource[];
   accountCodes: AccountCode[];
   costCentres: CostCentreCode[];
+  inflationRates: InflationRate[];
   projects: Project[];
   fundingEntries: FundingEntry[];
   budgetLines: StoredBudgetLine[];
+  finSupportedLines: FinSupportedLine[];
   teamMembers: TeamMember[];
   budgetPeriods: BudgetPeriod[];
   seq: number;
 }
 
-// Bumped again from orion.db.v3: new entity (BudgetPeriod, one per budget
-// exercise) — this is a clean slate with a different shape, so old data is
-// simply left behind under its old key rather than migrated.
-const STORAGE_KEY = 'orion.db.v4';
+// Bumped again from orion.db.v4: new entities (InflationRate,
+// FinSupportedLine) and a reworked BudgetLine workflow/shape (new
+// WorkflowStep values, previousPeriods, justifications, origin dropped) —
+// this is a clean slate with a different shape, so old data is simply left
+// behind under its old key rather than migrated.
+const STORAGE_KEY = 'orion.db.v5';
 
 function buildSeedUsers(): User[] {
   const now = new Date().toISOString();
@@ -79,6 +86,15 @@ function buildSeedCostCentres(): CostCentreCode[] {
   return [{ id: 'cc_1', code: '998019', description: 'Minor Development Project', createdAt: now }];
 }
 
+function buildSeedInflationRates(): InflationRate[] {
+  const now = new Date().toISOString();
+  const rows: Array<[InflationItem, number]> = [
+    ['Non IT Item', 3],
+    ['IT Item', 5],
+  ];
+  return rows.map(([item, value], i) => ({ id: `inflation_${i + 1}`, item, value, updatedAt: now }));
+}
+
 function buildSeedBudgetPeriods(): BudgetPeriod[] {
   const now = new Date().toISOString();
   return (BUDGET_EXERCISE_TYPES as readonly BudgetExerciseType[]).map((type) => ({
@@ -97,9 +113,11 @@ function emptyDb(): DbShape {
     fundingSources: buildSeedFundingSources(),
     accountCodes: buildSeedAccountCodes(),
     costCentres: buildSeedCostCentres(),
+    inflationRates: buildSeedInflationRates(),
     projects: [],
     fundingEntries: [],
     budgetLines: [],
+    finSupportedLines: [],
     teamMembers: [],
     budgetPeriods: buildSeedBudgetPeriods(),
     seq: 1,

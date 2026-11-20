@@ -34,9 +34,18 @@ export function emptyPeriods(kind: BudgetKind, simulationYear: number): Record<s
   return Object.fromEntries(keys.map((k) => [k, 0]));
 }
 
-export function inflationRate(recurring: YesNo | '', itProject: YesNo | ''): number | null {
+// Fractions (e.g. 0.03 for 3%), sourced live from Finance Admin's Inflation
+// Rate table (see lib/variance.ts / api.ts) rather than hardcoded, so
+// editing that table changes both recurring-line growth and the MTP
+// Variance justification threshold.
+export interface InflationRates {
+  nonItRate: number;
+  itRate: number;
+}
+
+export function inflationRate(recurring: YesNo | '', itProject: YesNo | '', rates: InflationRates): number | null {
   if (recurring !== 'Yes') return null;
-  return itProject === 'Yes' ? 0.05 : 0.03;
+  return itProject === 'Yes' ? rates.itRate : rates.nonItRate;
 }
 
 export function applyRecurringInflation(
@@ -44,10 +53,11 @@ export function applyRecurringInflation(
   simulationYear: number,
   recurring: YesNo | '',
   itProject: YesNo | '',
-  baseAmount: number
+  baseAmount: number,
+  rates: InflationRates
 ): Record<string, number> {
   const keys = periodKeys(kind, simulationYear);
-  const rate = inflationRate(recurring, itProject);
+  const rate = inflationRate(recurring, itProject, rates);
   const periods: Record<string, number> = {};
   keys.forEach((key, i) => {
     if (i === 0) {
@@ -63,4 +73,10 @@ export function applyRecurringInflation(
 
 export function sumPeriods(periods: Record<string, number>): number {
   return Object.values(periods).reduce((sum, v) => sum + (Number(v) || 0), 0);
+}
+
+// Fin Supported rounding: to the nearest 100, except a figure under 100
+// (in absolute value) is left exactly as it is.
+export function roundToNearestHundred(value: number): number {
+  return Math.abs(value) < 100 ? value : Math.round(value / 100) * 100;
 }

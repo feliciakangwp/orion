@@ -94,8 +94,34 @@ function NavItem({
   );
 }
 
-function NavHeader({ children }: { children: ReactNode }) {
-  return <div className="px-2 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-slate-500">{children}</div>;
+// Collapsed by default, so the sidebar opens short — click a section's
+// header to expand it and see its tabs.
+function NavSection({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between rounded px-2 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-300"
+        aria-expanded={open}
+      >
+        <span>{label}</span>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          className={`shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" />
+        </svg>
+      </button>
+      {open && <div className="flex flex-col gap-0.5">{children}</div>}
+    </div>
+  );
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -108,47 +134,48 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <>
       <div className="px-5 py-5 text-xl font-bold tracking-wide text-white">ORION</div>
       <nav className="mt-2 flex-1 overflow-y-auto px-3">
-        <NavHeader>Project Profile</NavHeader>
-        <NavItem to="/projects" end onNavigate={onNavigate}>
-          Project Profile
-        </NavItem>
-        <NavItem to="/projects/requests" onNavigate={onNavigate}>
-          Project Profile Request
-        </NavItem>
+        <NavSection label="Project Profile">
+          <NavItem to="/projects" end onNavigate={onNavigate}>
+            Project Profile
+          </NavItem>
+          <NavItem to="/projects/requests" onNavigate={onNavigate}>
+            Project Profile Request
+          </NavItem>
+        </NavSection>
 
-        <NavHeader>Medium Term Projection</NavHeader>
-        <NavItem to="/mtp/budget-line-item" onNavigate={onNavigate}>
-          Budget Line Item
-        </NavItem>
-        <NavItem to="/mtp/variance" onNavigate={onNavigate}>
-          MTP Variance
-        </NavItem>
-        <NavItem to="/mtp/review-phase" onNavigate={onNavigate}>
-          Review Phase
-        </NavItem>
-        {isFinanceManager && (
-          <>
-            <NavItem to="/mtp/clarification-fo" onNavigate={onNavigate}>
-              Clarification (FO)
-            </NavItem>
-            <NavItem to="/mtp/clarification-fm" onNavigate={onNavigate}>
-              Clarification (FM)
-            </NavItem>
-          </>
-        )}
-        <NavItem to="/mtp/approval-phase" onNavigate={onNavigate}>
-          Approval Phase
-        </NavItem>
-        <NavItem to="/mtp/fin-supported" onNavigate={onNavigate}>
-          Fin Supported
-        </NavItem>
-        <NavItem to="/mtp/inactive-users" onNavigate={onNavigate}>
-          MTP with Inactive Users
-        </NavItem>
+        <NavSection label="Medium Term Projection">
+          <NavItem to="/mtp/budget-line-item" onNavigate={onNavigate}>
+            Budget Line Item
+          </NavItem>
+          <NavItem to="/mtp/variance" onNavigate={onNavigate}>
+            MTP Variance
+          </NavItem>
+          <NavItem to="/mtp/review-phase" onNavigate={onNavigate}>
+            Review Phase
+          </NavItem>
+          {isFinanceManager && (
+            <>
+              <NavItem to="/mtp/clarification-fo" onNavigate={onNavigate}>
+                Clarification (FO)
+              </NavItem>
+              <NavItem to="/mtp/clarification-fm" onNavigate={onNavigate}>
+                Clarification (FM)
+              </NavItem>
+            </>
+          )}
+          <NavItem to="/mtp/approval-phase" onNavigate={onNavigate}>
+            Approval Phase
+          </NavItem>
+          <NavItem to="/mtp/fin-supported" onNavigate={onNavigate}>
+            Fin Supported
+          </NavItem>
+          <NavItem to="/mtp/inactive-users" onNavigate={onNavigate}>
+            MTP with Inactive Users
+          </NavItem>
+        </NavSection>
 
         {isFinanceAdmin && (
-          <>
-            <NavHeader>Finance Admin</NavHeader>
+          <NavSection label="Finance Admin">
             <NavItem to="/finance-admin/funding" onNavigate={onNavigate}>
               Source of Funding
             </NavItem>
@@ -164,16 +191,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <NavItem to="/finance-admin/inflation-rate" onNavigate={onNavigate}>
               Inflation Rate
             </NavItem>
-          </>
+          </NavSection>
         )}
 
         {superAdmin && (
-          <>
-            <NavHeader>IT Admin</NavHeader>
+          <NavSection label="IT Admin">
             <NavItem to="/it-admin/users" onNavigate={onNavigate}>
               User Management
             </NavItem>
-          </>
+          </NavSection>
         )}
       </nav>
       <div className="border-t border-slate-800 px-3 py-3 text-xs text-slate-500">

@@ -57,16 +57,21 @@ There's no concept of a fixed "persona" or department anymore. Instead:
   roles, not membership in them.
 - IT Admin → User Management (Super-Admin-only) is where Users are created
   and their groups/status edited.
-- The app seeds one starter User per group (named after the group, e.g.
-  "Branch Rep", "Finance Admin") so it's usable out of the box; add more
-  realistically-named users from User Management as needed.
+- The app seeds 19 named sample users (e.g. Felicia Kang — Super Admin,
+  Branch Rep; Tan Sok Buay Tiffany — Finance Manager, Finance Admin, DY
+  Head — several people hold more than one group) covering every group, so
+  it's usable out of the box with realistic data. The original one
+  starter-per-group placeholder Users (named after the group, e.g. "Branch
+  Rep") are kept but seeded **Inactive**, so they're not selectable in the
+  Impersonate dropdown — add more or reactivate them from User Management
+  as needed.
 
 ## Where does the data live
 
 Because this deploys as a static site (GitHub Pages), there is nowhere to
 run a shared backend. All users, projects, funding entries, budget lines,
 etc. are stored in **that browser's `localStorage`**, under the key
-`orion.db.v5`. Practically:
+`orion.db.v6`. Practically:
 
 - Data is private to one browser on one device — it is **not shared**
   between different people or different devices. Impersonating different
@@ -91,10 +96,12 @@ npm run dev
 ```
 
 Open the printed `localhost` URL. On first run the app seeds 10 Users (one
-per group, each with a placeholder `@orion.gov` email), the 8-row Source of
-Funding catalog, one Account (`511604` / ICT Consultation Services), one
-Cost Centre (`998019` / Minor Development Project), the Inflation Rate table
-(Non IT Item 3%, IT Item 5%), and the 3 Budget Period
+per group, each with a placeholder `@orion.gov` email, all **Inactive**) plus
+19 named sample Users covering every group (all **Active**), the 9-row
+Source of Funding catalog (8 real entries + the system-only Mainstreaming
+entry), a 22-row Account hierarchy (5 levels, Development and Operating
+branches), 6 sample Cost Centres (each tagged a Finance Officer), the
+Inflation Rate table (Non IT Item 3%, IT Item 5%), and the 3 Budget Period
 exercises (all Draft) into `localStorage`.
 
 ## Deployment (GitHub Pages)
@@ -114,6 +121,9 @@ so a path-based router would 404 on refresh of a deep link.)
 
 ## Feature map
 
+- Every sidebar section (Project Profile, Medium Term Projection, Finance
+  Admin, IT Admin) is **collapsed by default** — click a section's header
+  to expand or collapse it, so the sidebar opens short.
 - **Project Profile** list (sidebar: PROJECT PROFILE → Project Profile) with
   the required columns and a **NEW** button visible only to users with the
   Branch Rep group.
@@ -137,11 +147,23 @@ so a path-based router would 404 on refresh of a deep link.)
   - **Source of Funding** — named funding sources, each with a **Type**
     (Pipeline or Approved — typically as a named pair, e.g. "Within the
     Block (P)" / "Within the Block"), an **Internal/External** category,
-    and a **Status** (Active/Inactive, toggleable).
-  - **Account** — a code + description (seeded with `511604` / ICT
-    Consultation Services).
-  - **Cost Centre** — a code + description (seeded with `998019` / Minor
-    Development Project).
+    and a **Status** (Active/Inactive, toggleable). One entry,
+    **Mainstreaming**, is seeded but never offered on either picker — it's
+    system-computed only (see "Mainstreaming" below).
+  - **Account** — a **Name** (code + description, e.g. `511604 ICT
+    Consultation Services`), **Operating/Development**, a 5-**Level**
+    hierarchy (L1 `5000 Development Expenditure` down to L5 `511604 ICT
+    Consultation Services` — each level's code is a numeric prefix of the
+    level below it), and a **Status** (Active/Inactive). Seeded with a
+    full Development branch plus a mirrored dummy Operating branch. Only
+    Level 5 (leaf), Active entries are offered on a budget line's Account
+    dropdown; Finance Admin can change a row's Operating/Development and
+    Status.
+  - **Cost Centre** — **Display Name** (Code + Name), **Code**, **Name**,
+    **Type** (NO01 Administration / NO02 Revenue / NO03 Preventive),
+    **Nature of Expenditure** (Development/Operating), and a tagged
+    **Finance Officer**. Seeded with 6 sample rows. Finance Admin can
+    change a row's Type, Nature of Expenditure and Finance Officer.
   Finance Admin adds new entries to any of the three with **+ Add**. The
   Account and Cost Centre fields on every budget line (MTP/RB/OB/Block) are
   dropdowns populated from these two catalogs rather than free text.
@@ -181,8 +203,12 @@ so a path-based router would 404 on refresh of a deep link.)
   (defaulting to unselected) of **Active, Pipeline** catalog entries and an
   **Add** button to confirm. Finance (Officer/Manager) or Finance Admin
   later swap an entry to the matching **Approved** catalog entry as the
-  approval action itself — there's no separate "approve" button or Funding
-  Pot ID field.
+  approval action itself — there's no separate "approve" button. An
+  **External**-category entry has a **Show Fund Details** toggle revealing
+  its **Funding Pot ID**, **Supported Fund** amount, **Fund Start/Expiry
+  Date**, and **Project Development/Operating Cost Centre** — Finance
+  (Officer/Manager/Admin) fills these in, not the Branch Rep, since they
+  drive the Mainstreaming computation (see below).
 - **MTP** / **Block Budget** tabs — identical structure, 15 vs. 5 FY columns
   starting from the global **Simulation Year** control in the top bar. It
   applies across every project, so switching it is a "what-if" lens rather
@@ -258,16 +284,26 @@ so a path-based router would 404 on refresh of a deep link.)
   Approved line's rounded duplicate; Finance Officer/Finance Manager can
   edit its figures (never the original line). **MTP with Inactive Users**
   is a cleanup view of MTP lines tagged to a user who is now Inactive.
+- **Mainstreaming** — once a project's MTP budget period is **Closed for
+  Submission** (or Closed and Locked), each of its Approved lines' Fin
+  Supported duplicate is checked against that project's **External**,
+  Approved Source(s) of Funding: the total **Supported Fund** amount is a
+  pool spent, Financial Year by Financial Year, on that project's lines in
+  **creation order** — **Development lines first, then Operating** — and
+  any amount beyond what the pool still covers for that year (for either)
+  is **Mainstreaming**, shown as an amber annotation under the affected
+  period cell plus a **Mainstreaming Total** column. Once a FY is past the
+  **earliest Fund Expiry Date** among those entries, that year and every
+  year after it is 100% Mainstreaming regardless of remaining pool. This
+  is computed live every time Fin Supported is read (see
+  `lib/mainstreaming.ts` / `api.ts`'s `finSupportedLines.list`) — never
+  stored — so it always reflects the latest figures and fund details.
 - **Simulation Date** (top bar, next to Simulation Year) is a global
   "pretend today is this date" setting with a native calendar picker and a
   **Today** button to snap back to the real current date. Budget Period's
-  Closed for Submission transition is evaluated against this date, not the
-  browser's real clock, so you can test deadline behavior without waiting.
-- **Simulation Date** (top bar, next to Simulation Year) is a global
-  "pretend today is this date" setting with a native calendar picker and a
-  **Today** button to snap back to the real current date. Budget Period's
-  Closed for Submission transition is evaluated against this date, not the
-  browser's real clock, so you can test deadline behavior without waiting.
+  Closed for Submission transition (and so Mainstreaming) is evaluated
+  against this date, not the browser's real clock, so you can test
+  deadline behavior without waiting.
 
 ## Assumptions made where the spec was ambiguous
 
@@ -362,6 +398,33 @@ so a path-based router would 404 on refresh of a deep link.)
   only via Approval Phase — this seemed the more defensible reading of
   "these lines only appear when it requires the action of the particular
   role" than widening `canSeeLine` itself for CIO specifically.
+- Mainstreaming's external-fund ceiling and expiry live on each project's
+  **FundingEntry** (Funding Pot ID/Supported Fund/Fund Start-Expiry
+  Date/Development-Operating Cost Centre — confirmed before building
+  this), not as a single flat amount on the Project itself. A project with
+  more than one External, Approved entry has its **total** Supported Fund
+  summed across them and the **earliest** of their Fund Expiry Dates
+  governs the cutoff — the spec described a single pot, so this is a
+  simplifying rule for the (presumably rare) multi-pot case. Only
+  **Approved**-maturity External entries count; a still-Pipeline one
+  doesn't yet constrain anything.
+  "Development takes priority over Operating" (confirmed before building
+  this) is applied **per Financial Year**: each year's pool first pays
+  every Development line (in the project's line-creation order), then
+  whatever's left pays Operating lines, before moving to the next year —
+  not "every Dev line, every year, before any Ops line at all."
+  The Development/Operating Cost Centre fields captured alongside a
+  funding pot's other details are informational only; the waterfall itself
+  keys off each budget line's own existing Ops/Dev field, not a cost
+  centre lookup.
+- "Create some dummy data to have more account codes" filled out the
+  Development branch's gaps (extra Manpower/Asset Acquisition leaves) and
+  added a parallel dummy Operating branch (`6000` Operating Expenditure
+  down to leaves like `611101` Basic Salaries), so both natures have real
+  options; none of this was in the spec's own example. The account
+  hierarchy's levels are inferred purely from each code being a numeric
+  prefix of its parent's — there's no stored parent id, so renumbering a
+  code would silently detach it from its branch.
 - Authentication is out of scope; the Impersonate dropdown stands in for
   login, and anyone can impersonate anyone (there's no login/password of any
   kind gating who can pick which User).

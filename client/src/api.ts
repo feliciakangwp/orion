@@ -8,6 +8,7 @@
 import { getDb, nextId, saveDb, type StoredBudgetLine } from './local/db';
 import { applyRecurringInflation, emptyPeriods, fyOfDate, periodKeys, roundToNearestHundred, sumPeriods, type InflationRates } from './lib/calc';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind, EXERCISE_LABEL } from './lib/budgetPeriod';
+import { computeMainstreaming } from './lib/mainstreaming';
 import { justificationSatisfied } from './lib/variance';
 import {
   canApprove,
@@ -31,11 +32,14 @@ import {
 } from './lib/workflow';
 import type {
   AccountCode,
+  AccountLevel,
   BudgetExerciseType,
   BudgetKind,
   BudgetLine,
   BudgetPeriod,
   CostCentreCode,
+  CostCentreType,
+  ExpenditureNature,
   FinSupportedLine,
   FundingEntry,
   FundingSource,
@@ -265,7 +269,7 @@ export const api = {
 
   accountCodes: {
     list: () => run(() => getDb().accountCodes),
-    create: (data: { code: string; description: string }) =>
+    create: (data: { code: string; description: string; level: AccountLevel; opsOrDev: AccountCode['opsOrDev'] }) =>
       run(() => {
         const user = requireUser();
         if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can add an Account');
@@ -274,9 +278,23 @@ export const api = {
           id: nextId('acct'),
           code: data.code.trim(),
           description: data.description.trim(),
+          level: data.level,
+          opsOrDev: data.opsOrDev,
+          status: 'Active',
           createdAt: now(),
         };
         getDb().accountCodes.push(account);
+        saveDb();
+        return account;
+      }),
+    update: (id: string, data: Partial<Pick<AccountCode, 'opsOrDev' | 'status'>>) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can change an Account');
+        const account = getDb().accountCodes.find((a) => a.id === id);
+        if (!account) throw new Error('Not found');
+        if ('opsOrDev' in data && data.opsOrDev) account.opsOrDev = data.opsOrDev;
+        if ('status' in data && data.status) account.status = data.status;
         saveDb();
         return account;
       }),
@@ -284,20 +302,41 @@ export const api = {
 
   costCentres: {
     list: () => run(() => getDb().costCentres),
-    create: (data: { code: string; description: string }) =>
+    create: (data: {
+      code: string;
+      name: string;
+      type: CostCentreType;
+      natureOfExpenditure: ExpenditureNature;
+      financeOfficerUserId: string | null;
+    }) =>
       run(() => {
         const user = requireUser();
         if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can add a Cost Centre');
-        if (!data.code.trim() || !data.description.trim()) throw new Error('Cost Centre code and description are required');
+        if (!data.code.trim() || !data.name.trim()) throw new Error('Cost Centre code and name are required');
         const costCentre: CostCentreCode = {
           id: nextId('cc'),
           code: data.code.trim(),
-          description: data.description.trim(),
+          name: data.name.trim(),
+          type: data.type,
+          natureOfExpenditure: data.natureOfExpenditure,
+          financeOfficerUserId: data.financeOfficerUserId,
           createdAt: now(),
         };
         getDb().costCentres.push(costCentre);
         saveDb();
         return costCentre;
+      }),
+    update: (id: string, data: Partial<Pick<CostCentreCode, 'type' | 'natureOfExpenditure' | 'financeOfficerUserId'>>) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can change a Cost Centre');
+        const cc = getDb().costCentres.find((c) => c.id === id);
+        if (!cc) throw new Error('Not found');
+        if ('type' in data && data.type) cc.type = data.type;
+        if ('natureOfExpenditure' in data && data.natureOfExpenditure) cc.natureOfExpenditure = data.natureOfExpenditure;
+        if ('financeOfficerUserId' in data) cc.financeOfficerUserId = data.financeOfficerUserId ?? null;
+        saveDb();
+        return cc;
       }),
   },
 
@@ -324,7 +363,42 @@ export const api = {
   // budgetLines.approve) — editable only by Finance Officer/Finance
   // Manager, and editing it never touches the original BudgetLine.
   finSupportedLines: {
-    list: () => run(() => getDb().finSupportedLines),
+    // Mainstreaming is computed live, grouped per project, never stored —
+    // only once that project's MTP budget period is Closed for Submission
+    // or Closed and Locked (see lib/mainstreaming.ts).
+    list: () =>
+      run(() => {
+        const db = getDb();
+        const mtpPeriod = getBudgetPeriod('MTP');
+        const mtpStatus = effectiveBudgetPeriodStatus(mtpPeriod, currentSimDate);
+        const mainstreamingEligible = mtpStatus === 'Closed for Submission' || mtpStatus === 'Closed and Locked';
+        const byProject = new Map<string, FinSupportedLine[]>();
+        for (const l of db.finSupportedLines) {
+          if (!l.projectId) continue;
+          const arr = byProject.get(l.projectId) ?? [];
+          arr.push(l);
+          byProject.set(l.projectId, arr);
+        }
+        const mainstreamingByLineId = new Map<string, Record<string, number>>();
+        if (mainstreamingEligible) {
+          for (const [projectId, group] of byProject) {
+            const mtpGroup = group.filter((l) => l.kind === 'MTP');
+            if (mtpGroup.length === 0) continue;
+            const entries = db.fundingEntries.filter((f) => f.projectId === projectId);
+            const externalEntries = entries.filter((e) => {
+              const source = db.fundingSources.find((s) => s.id === e.fundingSourceId);
+              return source?.category === 'External' && source.maturity === 'Approved';
+            });
+            const totalSupportedFund = externalEntries.reduce((sum, e) => sum + (Number(e.supportedFund) || 0), 0);
+            const expiries = externalEntries.map((e) => e.fundExpiryDate).filter((d): d is string => !!d).map((d) => fyOfDate(d));
+            const expiryFY = expiries.length > 0 ? Math.min(...expiries) : null;
+            if (totalSupportedFund <= 0 && expiryFY === null) continue;
+            const computed = computeMainstreaming(mtpGroup, totalSupportedFund, expiryFY);
+            for (const [lineId, periods] of computed) mainstreamingByLineId.set(lineId, periods);
+          }
+        }
+        return db.finSupportedLines.map((l) => ({ ...l, mainstreamingPeriods: mainstreamingByLineId.get(l.id) ?? null }));
+      }),
     update: (id: string, periods: Record<string, number>) =>
       run(() => {
         const user = requireUser();
@@ -452,10 +526,42 @@ export const api = {
           id: nextId('funding'),
           projectId: project.id,
           fundingSourceId,
+          fundingPotId: '',
+          supportedFund: 0,
+          fundStartDate: null,
+          fundExpiryDate: null,
+          developmentCostCentre: '',
+          operatingCostCentre: '',
           createdAt: now(),
           updatedAt: now(),
         };
         getDb().fundingEntries.push(entry);
+        saveDb();
+        return entry;
+      }),
+    // The pot details (Pot ID, Supported Fund amount, Start/Expiry Date,
+    // Development/Operating Cost Centre) only make sense once the entry is
+    // on an External source — Finance fills these in (not the Branch Rep)
+    // since they drive the Mainstreaming computation.
+    updatePotDetails: (
+      id: string,
+      data: Partial<Pick<FundingEntry, 'fundingPotId' | 'supportedFund' | 'fundStartDate' | 'fundExpiryDate' | 'developmentCostCentre' | 'operatingCostCentre'>>
+    ) =>
+      run(() => {
+        const user = requireUser();
+        if (!isFinanceOrFinanceAdmin(user)) throw new Error('Only Finance can edit funding pot details');
+        const entry = getDb().fundingEntries.find((f) => f.id === id);
+        if (!entry) throw new Error('Not found');
+        if ('fundingPotId' in data && data.fundingPotId !== undefined) entry.fundingPotId = data.fundingPotId;
+        if ('supportedFund' in data && data.supportedFund !== undefined) {
+          if (!Number.isFinite(data.supportedFund) || data.supportedFund < 0) throw new Error('Supported Fund must be a non-negative amount');
+          entry.supportedFund = data.supportedFund;
+        }
+        if ('fundStartDate' in data) entry.fundStartDate = data.fundStartDate ?? null;
+        if ('fundExpiryDate' in data) entry.fundExpiryDate = data.fundExpiryDate ?? null;
+        if ('developmentCostCentre' in data && data.developmentCostCentre !== undefined) entry.developmentCostCentre = data.developmentCostCentre;
+        if ('operatingCostCentre' in data && data.operatingCostCentre !== undefined) entry.operatingCostCentre = data.operatingCostCentre;
+        entry.updatedAt = now();
         saveDb();
         return entry;
       }),
@@ -806,6 +912,7 @@ export const api = {
           const finSupported: FinSupportedLine = {
             id: nextId('finsupported'),
             sourceBudgetLineId: line.id,
+            sourceLineCreatedAt: line.createdAt,
             projectId: line.projectId,
             kind: line.kind,
             description: line.description,

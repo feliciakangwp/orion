@@ -73,33 +73,56 @@ export interface FundingSource {
 }
 
 // A project's chosen funding source. Its "type"/"status" for display are
-// always derived live from the referenced catalog entry, not duplicated here.
+// always derived live from the referenced catalog entry, not duplicated
+// here. The pot details (Pot ID, Supported Fund amount, Start/Expiry Date,
+// Development/Operating Cost Centre) only apply to an External entry —
+// they're what Mainstreaming (see lib/mainstreaming.ts) is computed from.
 export interface FundingEntry {
   id: string;
   projectId: string;
   fundingSourceId: string;
+  fundingPotId: string;
+  supportedFund: number;
+  fundStartDate: string | null;
+  fundExpiryDate: string | null;
+  developmentCostCentre: string;
+  operatingCostCentre: string;
   createdAt: string;
   updatedAt: string;
 }
 
-// ---------- Account / Cost Centre catalogs (Finance Admin) ----------
-// Finance-Admin-managed master lists, each entry a code + description (e.g.
-// "511604" / "ICT Consultation Services"). The Account/Cost Centre fields on
-// a budget line are dropdowns populated from these, storing the chosen
-// "code description" string directly (no foreign key — matches how the
-// budget line's Account/Cost Centre were always plain strings).
+// ---------- Account catalog (Finance Admin) ----------
+// A 5-level account code hierarchy (e.g. L1 "5000 Development Expenditure"
+// down to L5 "511604 ICT Consultation Services") — the level-above code is
+// always a numeric prefix of the level-below one, so the hierarchy is
+// implicit in the codes rather than a stored parent link. Only Level 5
+// (leaf) entries are offered on a budget line's Account dropdown.
+
+export type AccountLevel = 1 | 2 | 3 | 4 | 5;
 
 export interface AccountCode {
   id: string;
   code: string;
   description: string;
+  level: AccountLevel;
+  opsOrDev: 'Operating' | 'Development' | '';
+  status: CatalogStatus;
   createdAt: string;
 }
+
+// ---------- Cost Centre catalog (Finance Admin) ----------
+
+export const COST_CENTRE_TYPES = ['NO01 Administration', 'NO02 Revenue', 'NO03 Preventive'] as const;
+export type CostCentreType = (typeof COST_CENTRE_TYPES)[number];
+export type ExpenditureNature = 'Development' | 'Operating';
 
 export interface CostCentreCode {
   id: string;
   code: string;
-  description: string;
+  name: string;
+  type: CostCentreType;
+  natureOfExpenditure: ExpenditureNature;
+  financeOfficerUserId: string | null;
   createdAt: string;
 }
 
@@ -236,6 +259,10 @@ export interface InflationRate {
 export interface FinSupportedLine {
   id: string;
   sourceBudgetLineId: string;
+  // The original line's own createdAt — governs "line 1 to 10" ordering
+  // for the Mainstreaming waterfall (see lib/mainstreaming.ts), which is
+  // about creation order, not approval order.
+  sourceLineCreatedAt: string;
   projectId: string | null;
   kind: BudgetKind;
   description: string;
@@ -248,6 +275,13 @@ export interface FinSupportedLine {
   periods: Record<string, number>;
   createdAt: string;
   updatedAt: string;
+}
+
+// Computed (never stored) at read time, once the project's MTP budget
+// period is Closed for Submission or Closed and Locked — see
+// `lib/mainstreaming.ts` and `api.ts`'s `finSupportedLines.list`.
+export interface FinSupportedLineWithMainstreaming extends FinSupportedLine {
+  mainstreamingPeriods: Record<string, number> | null;
 }
 
 // ---------- Team Members ----------

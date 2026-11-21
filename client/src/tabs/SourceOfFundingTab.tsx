@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
-import { Button, Card, selectCls, StatusBadge } from '../components/ui';
+import { Button, Card, inputCls, selectCls, StatusBadge } from '../components/ui';
 import { isFinanceOrFinanceAdmin, isOwningBranchRep as isOwningBranchRepUser } from '../lib/workflow';
-import type { FundingEntry, FundingSource, Project } from '../types';
+import type { CostCentreCode, FundingEntry, FundingSource, Project } from '../types';
 
 function AddSourceOfFundingModal({
   pipelineOptions,
@@ -108,16 +108,143 @@ function PromoteCell({
   );
 }
 
+// Pot details (Pot ID, Supported Fund amount, Start/Expiry Date,
+// Development/Operating Cost Centre) only apply to an External entry —
+// they drive the Mainstreaming computation shown in Fin Supported once the
+// MTP budget period is Closed for Submission. Finance fills these in, not
+// the Branch Rep.
+function PotDetailsPanel({
+  entry,
+  editable,
+  costCentres,
+  onChanged,
+}: {
+  entry: FundingEntry;
+  editable: boolean;
+  costCentres: CostCentreCode[];
+  onChanged: () => void;
+}) {
+  const [fundingPotId, setFundingPotId] = useState(entry.fundingPotId);
+  const [supportedFund, setSupportedFund] = useState(String(entry.supportedFund));
+  const [fundStartDate, setFundStartDate] = useState(entry.fundStartDate ?? '');
+  const [fundExpiryDate, setFundExpiryDate] = useState(entry.fundExpiryDate ?? '');
+  const [developmentCostCentre, setDevelopmentCostCentre] = useState(entry.developmentCostCentre);
+  const [operatingCostCentre, setOperatingCostCentre] = useState(entry.operatingCostCentre);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const devCostCentres = costCentres.filter((c) => c.natureOfExpenditure === 'Development');
+  const opsCostCentres = costCentres.filter((c) => c.natureOfExpenditure === 'Operating');
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      await api.funding.updatePotDetails(entry.id, {
+        fundingPotId,
+        supportedFund: Number(supportedFund) || 0,
+        fundStartDate: fundStartDate || null,
+        fundExpiryDate: fundExpiryDate || null,
+        developmentCostCentre,
+        operatingCostCentre,
+      });
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <tr>
+      <td colSpan={4} className="bg-slate-50 px-4 py-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Funding Pot ID</span>
+            <input className={inputCls} value={fundingPotId} disabled={!editable} onChange={(e) => setFundingPotId(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supported Fund</span>
+            <input
+              type="number"
+              className={inputCls}
+              value={supportedFund}
+              disabled={!editable}
+              onChange={(e) => setSupportedFund(e.target.value)}
+            />
+          </label>
+          <div />
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fund Start Date</span>
+            <input
+              type="date"
+              className={inputCls}
+              value={fundStartDate}
+              disabled={!editable}
+              onChange={(e) => setFundStartDate(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fund Expiry Date</span>
+            <input
+              type="date"
+              className={inputCls}
+              value={fundExpiryDate}
+              disabled={!editable}
+              onChange={(e) => setFundExpiryDate(e.target.value)}
+            />
+          </label>
+          <div />
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project Development Cost Centre</span>
+            <select className={selectCls} value={developmentCostCentre} disabled={!editable} onChange={(e) => setDevelopmentCostCentre(e.target.value)}>
+              <option value="">—</option>
+              {devCostCentres.map((c) => (
+                <option key={c.id} value={`${c.code} ${c.name}`}>
+                  {c.code} {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project Operating Cost Centre</span>
+            <select className={selectCls} value={operatingCostCentre} disabled={!editable} onChange={(e) => setOperatingCostCentre(e.target.value)}>
+              <option value="">—</option>
+              {opsCostCentres.map((c) => (
+                <option key={c.id} value={`${c.code} ${c.name}`}>
+                  {c.code} {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {error && <div className="mt-2 text-sm text-rose-600">{error}</div>}
+        {editable && (
+          <div className="mt-3">
+            <Button className="!px-2 !py-1 text-xs" onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save Fund Details'}
+            </Button>
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
 export function SourceOfFundingTab({ project }: { project: Project }) {
   const { currentUser } = useAuth();
   const [entries, setEntries] = useState<FundingEntry[]>([]);
   const [catalog, setCatalog] = useState<FundingSource[]>([]);
+  const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   function reload() {
     api.funding.list(project.id).then(setEntries);
     api.fundingCatalog.list().then(setCatalog);
+    api.costCentres.list().then(setCostCentres);
   }
   useEffect(reload, [project.id]);
 
@@ -126,9 +253,10 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
 
   const sourceOf = (id: string) => catalog.find((c) => c.id === id);
   // Branch Reps may only pick Pipeline, Active catalog entries; Finance picks
-  // the matching Approved entry as the approval action itself.
-  const pipelineOptions = catalog.filter((c) => c.status === 'Active' && c.maturity === 'Pipeline');
-  const approvedOptions = catalog.filter((c) => c.status === 'Active' && c.maturity === 'Approved');
+  // the matching Approved entry as the approval action itself. Mainstreaming
+  // is system-computed only — never offered on either picker.
+  const pipelineOptions = catalog.filter((c) => c.status === 'Active' && c.maturity === 'Pipeline' && c.name !== 'Mainstreaming');
+  const approvedOptions = catalog.filter((c) => c.status === 'Active' && c.maturity === 'Approved' && c.name !== 'Mainstreaming');
 
   async function addEntry(fundingSourceId: string) {
     setError(null);
@@ -161,6 +289,15 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
     }
   }
 
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
     <div>
       {isOwningBranchRep && (
@@ -184,43 +321,55 @@ export function SourceOfFundingTab({ project }: { project: Project }) {
             {entries.map((entry) => {
               const source = sourceOf(entry.fundingSourceId);
               const isPipeline = source?.maturity === 'Pipeline';
+              const isExternal = source?.category === 'External';
               const editableByBranchRep = isOwningBranchRep && isPipeline;
+              const isExpanded = expanded.has(entry.id);
               return (
-                <tr key={entry.id}>
-                  <td className="px-4 py-3">
-                    {editableByBranchRep ? (
-                      <select
-                        className={`${selectCls} w-56`}
-                        value={entry.fundingSourceId}
-                        onChange={(e) => changeSource(entry, e.target.value)}
-                      >
-                        {pipelineOptions.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      source?.name ?? '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{source?.category ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={source?.maturity ?? '—'} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {isFinanceActor && isPipeline && (
-                        <PromoteCell entry={entry} approvedOptions={approvedOptions} onDone={reload} />
+                <Fragment key={entry.id}>
+                  <tr>
+                    <td className="px-4 py-3">
+                      {editableByBranchRep ? (
+                        <select
+                          className={`${selectCls} w-56`}
+                          value={entry.fundingSourceId}
+                          onChange={(e) => changeSource(entry, e.target.value)}
+                        >
+                          {pipelineOptions.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        source?.name ?? '—'
                       )}
-                      {isOwningBranchRep && isPipeline && (
-                        <Button variant="ghost" onClick={() => remove(entry)}>
-                          Remove
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                    <td className="px-4 py-3">{source?.category ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={source?.maturity ?? '—'} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {isFinanceActor && isPipeline && (
+                          <PromoteCell entry={entry} approvedOptions={approvedOptions} onDone={reload} />
+                        )}
+                        {isOwningBranchRep && isPipeline && (
+                          <Button variant="ghost" onClick={() => remove(entry)}>
+                            Remove
+                          </Button>
+                        )}
+                        {isExternal && (
+                          <Button variant="ghost" onClick={() => toggleExpanded(entry.id)}>
+                            {isExpanded ? 'Hide' : 'Show'} Fund Details
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {isExternal && isExpanded && (
+                    <PotDetailsPanel entry={entry} editable={isFinanceActor} costCentres={costCentres} onChanged={reload} />
+                  )}
+                </Fragment>
               );
             })}
             {entries.length === 0 && (

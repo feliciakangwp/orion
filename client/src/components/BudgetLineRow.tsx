@@ -181,11 +181,13 @@ export function BudgetLineRow({
           onBlur={(e) => patch({ account: e.target.value })}
         >
           <option value="">—</option>
-          {accountCodes.map((a) => (
-            <option key={a.id} value={`${a.code} ${a.description}`}>
-              {a.code} {a.description}
-            </option>
-          ))}
+          {accountCodes
+            .filter((a) => a.level === 5 && a.status === 'Active')
+            .map((a) => (
+              <option key={a.id} value={`${a.code} ${a.description}`}>
+                {a.code} {a.description}
+              </option>
+            ))}
         </select>
       </td>
       <td className="px-2 py-2">
@@ -237,8 +239,8 @@ export function BudgetLineRow({
         >
           <option value="">—</option>
           {costCentres.map((c) => (
-            <option key={c.id} value={`${c.code} ${c.description}`}>
-              {c.code} {c.description}
+            <option key={c.id} value={`${c.code} ${c.name}`}>
+              {c.code} {c.name}
             </option>
           ))}
         </select>

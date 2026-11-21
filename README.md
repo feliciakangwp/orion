@@ -71,7 +71,7 @@ There's no concept of a fixed "persona" or department anymore. Instead:
 Because this deploys as a static site (GitHub Pages), there is nowhere to
 run a shared backend. All users, projects, funding entries, budget lines,
 etc. are stored in **that browser's `localStorage`**, under the key
-`orion.db.v6`. Practically:
+`orion.db.v10`. Practically:
 
 - Data is private to one browser on one device — it is **not shared**
   between different people or different devices. Impersonating different
@@ -83,6 +83,32 @@ etc. are stored in **that browser's `localStorage`**, under the key
 - The sidebar has a **"Reset Demo Data"** link that wipes and reseeds the
   local store on demand — this is also how to get a clean Project Profile
   slate if you've been testing.
+- Right below it, **"Load Sample Data"** wipes and reseeds the local store
+  too, then builds a demo dataset on top of it: two Project Profiles (one
+  IT, one not), a confirmed AOR, and five Medium Term Projection lines —
+  one ad hoc (no Project Profile), one in a second project, the rest in
+  the first — carried at various stages (two fully Approved, one at
+  Clarification (FO), one at Review, one still Draft) through Annual
+  Budget (Original Budget bootstrapped straight from Medium Term
+  Projection) and Block Budget (rolled forward from Medium Term
+  Projection), so the MTP → Annual Budget → Block Budget linkage, the AOR
+  knock-off/insufficient-balance highlight, the Reviewer 2 skip, and the
+  CIO-vs-Approver IT-project branch are all visibly populated and ready to
+  explore. It's built by actually driving the real engine functions
+  (`rollAnnualBudgetForward`, `flowOriginalBudgetIntoMtp`,
+  `rollBlockBudgetForward`, and the same `submit`/`approve`/`update` calls
+  the UI itself uses) rather than hand-written records, so every linkage
+  matches the rules those functions already enforce — see
+  `loadSampleData()` in `client/src/api.ts` for the exact script and the
+  one deliberate exception (Block Budget's own exercise period is left at
+  Draft with just its Start Year set, since Annual Budget's cycle has to
+  stay non-Draft for its own lines to stay visible — see
+  `belongsToCurrentCycle` — and the two can't both be non-Draft through
+  the real `open()` action's own mutual-exclusivity rule).
+- Nothing above is automatic: a fresh browser (or either of these two
+  buttons) only ever produces what that button documents — every existing
+  Playwright regression test assumes a truly blank slate on first load, so
+  "Load Sample Data" is strictly opt-in, never triggered on its own.
 
 If you need real shared/multi-user data, you'd need a real backend; `server/`
 is a starting point but needs its own User/Group rewrite first (see above).
@@ -831,3 +857,34 @@ so a path-based router would 404 on refresh of a deep link.)
   access isn't blocked, consistent with how every other page in ORION
   enforces visibility through filtered listings and field-level
   permission checks rather than a route-level hard deny.
+- "Load Sample Data" is a **separate** button from "Reset Demo Data"
+  rather than the same one gaining sample data by default, because every
+  existing Playwright regression test launches a fresh browser profile
+  and assumes it starts truly empty — making sample data automatic would
+  have broken all of them. The one time it can't call the real,
+  permission-gated `api.budgetPeriods.open('BLOCK', ...)` action (which
+  demands Medium Term Projection *and* Annual Budget both be Draft at
+  that moment — impossible once Annual Budget is deliberately kept
+  Locked so its own Original/Revised Budget lines stay visible), it calls
+  the exact same internal rollover function that action would have
+  called, directly — never a hand-written substitute — and leaves Block
+  Budget's own exercise period at Draft with just its Start Year set, a
+  state Finance Admin can reach for real too (`setBlockBudgetStartYear`
+  has no such cross-exercise restriction) and can finish from at any time
+  by clicking Open — which would just re-run the identical rollover
+  (confirmed idempotent: it updates each existing Block line in place
+  rather than duplicating it).
+- An Original Budget/Revised Budget line inherits Medium Term
+  Projection's own Recurring flag on bootstrap (same field, same
+  record-construction code as every other catalog field it carries
+  down) — but Recurring's growth formula is written in terms of
+  generic period index, so applying it to Annual Budget's 12 *months*
+  within one FY (instead of MTP/Block's multiple FY *years*) grows each
+  month as if it were "a year later" at the IT/non-IT rate, which isn't
+  a reasonable real-world outcome for a flat-ish monthly spend profile.
+  This looks like a genuine latent inconsistency in how Recurring was
+  carried over to Annual Budget, predating this round and out of scope
+  to fix here — `loadSampleData()` simply avoids triggering it by
+  switching Recurring off before setting an Original Budget line's own
+  monthly figures, exactly as a real Branch Rep editing one would need
+  to.

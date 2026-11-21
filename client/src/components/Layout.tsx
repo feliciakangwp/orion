@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
+import { loadSampleData } from '../api';
 import { useAuth } from '../AuthContext';
 import { isSuperAdmin } from '../lib/workflow';
 import { resetDb } from '../local/db';
@@ -292,6 +293,25 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           }}
         >
           Reset Demo Data
+        </button>
+        <button
+          className="mt-2 block text-indigo-400 hover:text-indigo-300 hover:underline"
+          onClick={async () => {
+            if (
+              confirm(
+                'Load sample data into this browser? This replaces all current ORION data with a demo dataset linked across Medium Term Projection, Annual Budget and Block Budget.'
+              )
+            ) {
+              try {
+                await loadSampleData();
+                window.location.reload();
+              } catch (e) {
+                alert(`Failed to load sample data: ${(e as Error).message}`);
+              }
+            }
+          }}
+        >
+          Load Sample Data
         </button>
       </div>
     </>

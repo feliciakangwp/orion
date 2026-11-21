@@ -5,7 +5,7 @@
 // enforced here against whichever User is currently "impersonated" (see
 // AuthContext.tsx), the same way a real server would enforce it against a
 // logged-in session.
-import { getDb, nextId, saveDb, type StoredBudgetLine } from './local/db';
+import { getDb, nextId, resetDb, saveDb, type StoredBudgetLine } from './local/db';
 import { applyRecurringInflation, emptyPeriods, fyKey, fyOfDate, periodKeys, roundToNearestHundred, sumPeriods, type InflationRates } from './lib/calc';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind, EXERCISE_LABEL } from './lib/budgetPeriod';
 import { computeMainstreaming } from './lib/mainstreaming';
@@ -1720,3 +1720,379 @@ export const api = {
       }),
   },
 };
+
+// Demo data, triggered on demand by the "Load Sample Data" button (see
+// Layout.tsx) — never automatic, since every existing Playwright
+// regression test assumes a truly blank slate on a fresh profile. Builds
+// two Project Profiles, an AOR, and five Medium Term Projection lines (one
+// ad hoc, one in a second project), then drives them through Annual
+// Budget (Original Budget bootstrapped straight from MTP) and Block
+// Budget (rolled forward from MTP) using the exact same engine functions
+// a real Finance Admin/Branch Rep/Reviewer/Approver action would use —
+// never hand-crafted records — so every linkage (MTP->OB, MTP->Block,
+// approved OB -> AOR knock-off, approved OB -> flow-back into MTP) is
+// guaranteed to match the rules those functions already enforce. The one
+// deliberate bypass is Block Budget's rollover: the real `open()` action
+// requires every other exercise to be Draft, which Annual Budget no
+// longer is once its own cycle is Locked (needed to keep its lines
+// visible — see belongsToCurrentCycle) — so this calls the same internal
+// rollBlockBudgetForward the real action would call, directly, leaving
+// Block Budget's own period at Draft with just its Start Year set
+// (a real, valid state — Finance Admin just hasn't clicked Open yet).
+export async function loadSampleData(): Promise<void> {
+  resetDb();
+  const prevUserId = currentUserId;
+  try {
+    const db = getDb();
+    const byName = (name: string) => {
+      const u = db.users.find((x) => x.name === name);
+      if (!u) throw new Error(`Seed user not found: ${name}`);
+      return u;
+    };
+    const jasonYong = byName('Jason Yong');
+    const jeffreyChoy = byName('Jeffrey Choy');
+    const pamelaChan = byName('Pamela Chan');
+    const andyOng = byName('Andy Ong');
+    const jonathanTay = byName('Jonathan Tay');
+    const raineNg = byName('Raine Ng');
+    const chenYu = byName('Chen Yu'); // Finance Officer + Finance Admin
+    const limShuYing = byName('Lim Shu Ying'); // Finance Officer
+    const francineChua = byName('Francine Chua'); // Finance Manager
+    const cherylSim = byName('Cheryl Sim'); // CIO — approves in place of the named Approver for any IT project line
+
+    async function submitAs(userId: string, lineId: string) {
+      setApiUser(userId);
+      await api.budgetLines.submit(lineId);
+    }
+    async function approveAs(userId: string, lineId: string) {
+      setApiUser(userId);
+      await api.budgetLines.approve(lineId);
+    }
+    function findBySource(kind: 'OB' | 'BLOCK', sourceMtpLineId: string): StoredBudgetLine {
+      const line = db.budgetLines.find((l) => l.kind === kind && l.sourceMtpLineId === sourceMtpLineId);
+      if (!line) throw new Error(`Expected a rolled-over ${kind} line for MTP line ${sourceMtpLineId}`);
+      return line;
+    }
+
+    // ---------- Project 1: Trade Declaration System Enhancement (IT) ----------
+    setApiUser(jasonYong.id);
+    const project1 = await api.projects.create({
+      title: 'Trade Declaration System Enhancement',
+      justification:
+        'Modernise the trade declaration platform to support real-time risk engine integration and reduce manual processing time.',
+    });
+    await api.projects.submitRequest(project1.id);
+    await api.teamMembers.addMany(project1.id, [pamelaChan.id]);
+    const fundingSource1 = db.fundingSources.find((f) => f.name === 'Within the Block (P)')!;
+    const funding1 = await api.funding.create(project1.id, fundingSource1.id);
+
+    setApiUser(chenYu.id);
+    await api.projects.update(project1.id, {
+      subAccount: 'Q1095 ORION',
+      developmentCostCentre: '556789 Customs Systems Modernisation',
+      operatingCostCentre: '712045 Trade Facilitation Services',
+      financeOfficerId: chenYu.id,
+    });
+    await api.projects.approve(project1.id);
+
+    setApiUser(jasonYong.id);
+    const aor1 = await api.aors.create(project1.id);
+    await api.aors.update(aor1.id, {
+      approvedByUserId: raineNg.id,
+      approvedDate: '2026-04-01',
+      developmentApprovedFund: 250000,
+      operatingApprovedFund: 80000,
+      startDate: '2026-04-01',
+      expiredDate: '2029-03-31',
+    });
+    setApiUser(chenYu.id);
+    await api.aors.confirm(aor1.id);
+
+    // ---------- Project 2: Checkpoint Scanner Replacement (non-IT) ----------
+    setApiUser(jeffreyChoy.id);
+    const project2 = await api.projects.create({
+      title: 'Checkpoint Scanner Replacement',
+      justification: 'Replace end-of-life X-ray scanning units at three checkpoints to maintain inspection throughput.',
+    });
+    await api.projects.submitRequest(project2.id);
+    const fundingSource2 = db.fundingSources.find((f) => f.name === 'Within the Block (P)')!;
+    const funding2 = await api.funding.create(project2.id, fundingSource2.id);
+
+    setApiUser(limShuYing.id);
+    await api.projects.update(project2.id, {
+      subAccount: 'Q1126 Checkpoint Digitalisation',
+      developmentCostCentre: '256313 IT Application & Technical Services',
+      operatingCostCentre: '834210 Container Scanning Operations',
+      financeOfficerId: limShuYing.id,
+    });
+    await api.projects.approve(project2.id);
+    // Deliberately no AOR for Project 2 — demonstrates the insufficient-
+    // balance warning for a project that hasn't set one up at all yet
+    // (zero approved fund of any type means any Original Budget spend is
+    // "insufficient").
+
+    // ---------- Medium Term Projection lines ----------
+    setApiUser(jasonYong.id);
+    const lineA = await api.budgetLines.create(project1.id, 'MTP', 2026);
+    await api.budgetLines.update(
+      lineA.id,
+      {
+        description: 'Core trade declaration platform rebuild',
+        opsOrDev: 'Dev',
+        account: '511604 ICT Consultation Services',
+        fundingEntryId: funding1.id,
+        recurring: 'Yes',
+        costCentre: '556789 Customs Systems Modernisation',
+        itProject: 'Yes',
+        ictExp: 'Application Development & Maintenance',
+        buildOrBuy: 'Build',
+        basis: 'Vendor quotation for platform redevelopment',
+        periods: { FY26: 200000 },
+        reviewer1UserId: andyOng.id,
+        reviewer2UserId: jonathanTay.id,
+        // An IT project's final approval is gated by the CIO group, not
+        // this field (see STEP_ACTOR['PENDING_APPROVAL_CIO']) — Cheryl Sim
+        // is who actually approves it at the end, below.
+        approverUserId: cherylSim.id,
+        justifications: { FY26: 'New platform rebuild — first-ever submission, no prior baseline to compare against.' },
+      },
+      2026
+    );
+
+    const lineB = await api.budgetLines.create(project1.id, 'MTP', 2026);
+    await api.budgetLines.update(
+      lineB.id,
+      {
+        description: 'Legacy EDI gateway maintenance support contract',
+        opsOrDev: 'Ops',
+        account: '611602 Maintenance Services',
+        fundingEntryId: funding1.id,
+        recurring: 'No',
+        costCentre: '712045 Trade Facilitation Services',
+        itProject: 'No',
+        basis: 'Vendor support contract quotation',
+        periods: { FY26: 60000, FY27: 60000, FY28: 60000, FY29: 60000, FY30: 60000, FY31: 60000, FY32: 60000 },
+        reviewer1UserId: andyOng.id,
+        // No Reviewer 2 on this line — approval skips Pending Approval
+        // (Reviewer 2) entirely once Clarification (FM) clears it.
+        approverUserId: raineNg.id,
+        justifications: { FY26: 'New support contract — first-ever submission, no prior baseline to compare against.' },
+      },
+      2026
+    );
+
+    const lineC = await api.budgetLines.create(project1.id, 'MTP', 2026);
+    await api.budgetLines.update(
+      lineC.id,
+      {
+        description: 'Trade data analytics dashboard',
+        opsOrDev: 'Dev',
+        account: '511603 Software as a Service',
+        fundingEntryId: funding1.id,
+        recurring: 'Yes',
+        costCentre: '556789 Customs Systems Modernisation',
+        itProject: 'Yes',
+        ictExp: 'Software-as-a-Service',
+        buildOrBuy: 'Buy',
+        basis: 'SaaS subscription estimate based on vendor proposal',
+        periods: { FY26: 80000 },
+        reviewer1UserId: jonathanTay.id,
+        reviewer2UserId: andyOng.id,
+        approverUserId: cherylSim.id, // IT project — CIO gates the final approval, not this field
+        justifications: { FY26: 'New SaaS subscription — first-ever submission, no prior baseline to compare against.' },
+      },
+      2026
+    );
+
+    setApiUser(jeffreyChoy.id);
+    const lineD = await api.budgetLines.createAdHoc('MTP', 2026, null);
+    await api.budgetLines.update(
+      lineD.id,
+      {
+        description: 'Checkpoint mobile scanning device maintenance contract',
+        opsOrDev: 'Dev',
+        account: '511201 IT Equipment',
+        recurring: 'No',
+        costCentre: '834210 Container Scanning Operations',
+        itProject: 'No',
+        basis: 'Hardware maintenance contract estimate',
+        periods: { FY26: 45000, FY27: 45000, FY28: 45000, FY29: 45000, FY30: 45000, FY31: 45000, FY32: 45000 },
+        reviewer1UserId: andyOng.id,
+        approverUserId: raineNg.id,
+        justifications: { FY26: 'Ad hoc line, not tied to a Project Profile — first-ever submission, no prior baseline.' },
+      },
+      2026
+    );
+
+    const lineE = await api.budgetLines.create(project2.id, 'MTP', 2026);
+    await api.budgetLines.update(
+      lineE.id,
+      {
+        description: 'Mobile X-ray unit maintenance — Terminal 3',
+        opsOrDev: 'Dev',
+        account: '511201 IT Equipment',
+        fundingEntryId: funding2.id,
+        recurring: 'No',
+        costCentre: '834210 Container Scanning Operations',
+        itProject: 'No',
+        basis: 'Still gathering vendor quotations',
+        periods: { FY26: 150000, FY27: 150000 },
+        // Left in Draft on purpose — Branch Rep hasn't finished setting
+        // Reviewer 1/Approver yet, so it's never submitted.
+      },
+      2026
+    );
+
+    // Drive the lines through their respective workflow stages.
+    setApiUser(jasonYong.id);
+    await submitAs(jasonYong.id, lineA.id);
+    await submitAs(jasonYong.id, lineB.id);
+    await submitAs(jasonYong.id, lineC.id);
+    setApiUser(jeffreyChoy.id);
+    await submitAs(jeffreyChoy.id, lineD.id);
+
+    // Line A: full chain through to Approved (has a Reviewer 2).
+    await approveAs(andyOng.id, lineA.id); // Reviewer 1 -> Clarification (FO)
+    await approveAs(chenYu.id, lineA.id); // Finance Officer -> Clarification (FM)
+    await approveAs(francineChua.id, lineA.id); // Finance Manager -> Pending Approval (Reviewer 2)
+    await approveAs(jonathanTay.id, lineA.id); // Reviewer 2 -> Pending Approval (CIO), since this is an IT project
+    await approveAs(cherylSim.id, lineA.id); // CIO -> Approved
+
+    // Line B: full chain through to Approved, with no Reviewer 2 — skips
+    // Pending Approval (Reviewer 2) entirely after Clarification (FM).
+    await approveAs(andyOng.id, lineB.id);
+    await approveAs(chenYu.id, lineB.id);
+    await approveAs(francineChua.id, lineB.id); // -> straight to Pending Approval (Approver)
+    await approveAs(raineNg.id, lineB.id); // -> Approved
+
+    // Line C: left at Clarification (FO), pending Finance Officer action —
+    // populates the Review Phase action queue for a live demo.
+    await approveAs(jonathanTay.id, lineC.id);
+
+    // Line D: left at Review, pending Reviewer 1 (Andy Ong) — also
+    // populates the Review Phase action queue.
+    // (nothing further — already submitted above)
+
+    // Line E stays in Draft, untouched.
+
+    // ---------- Annual Budget: open (bootstraps Original Budget from MTP) ----------
+    setApiUser(chenYu.id);
+    await api.budgetPeriods.open('ANNUAL', '2026-04-01', '2027-03-31');
+    // First-ever cycle: Revised Budget starts empty (nothing to duplicate
+    // from yet) — this is expected, not a bug.
+
+    const obKeys = periodKeys('OB', 2027);
+    const monthly = (total: number) => Object.fromEntries(obKeys.map((k) => [k, Math.round((total / obKeys.length) * 100) / 100]));
+
+    const obA = findBySource('OB', lineA.id);
+    setApiUser(jasonYong.id);
+    await api.budgetLines.update(
+      obA.id,
+      {
+        // OB inherits MTP's Recurring flag on bootstrap (see
+        // rollAnnualBudgetForward's freshLine) — Line A is itself
+        // recurring, but that flag means something different across 12
+        // months within one FY than across years, so switch it off before
+        // setting plain monthly figures (otherwise update()'s recurring-
+        // growth recompute would treat each month as "a year later" and
+        // distort every month after the first).
+        recurring: 'No',
+        periods: monthly(300000), // deliberately exceeds the AOR's 250,000 Development fund
+        reviewer1UserId: andyOng.id,
+        approverUserId: cherylSim.id, // IT project — CIO gates the final approval, not this field
+        justificationForVariance: 'Scope grew to include the real-time risk engine integration originally planned for a later phase.',
+      },
+      2027
+    );
+    await submitAs(jasonYong.id, obA.id);
+    await approveAs(andyOng.id, obA.id);
+    await approveAs(chenYu.id, obA.id);
+    await approveAs(francineChua.id, obA.id); // no Reviewer 2 -> straight to Pending Approval (CIO), IT project
+    await approveAs(cherylSim.id, obA.id); // CIO -> Approved
+
+    const obB = findBySource('OB', lineB.id);
+    setApiUser(jasonYong.id);
+    await api.budgetLines.update(
+      obB.id,
+      {
+        periods: monthly(60000), // comfortably within the AOR's 80,000 Operating fund
+        reviewer1UserId: andyOng.id,
+        approverUserId: raineNg.id,
+        justificationForVariance: 'Support contract renewed at the same annual rate as planned.',
+      },
+      2027
+    );
+    await submitAs(jasonYong.id, obB.id);
+    await approveAs(andyOng.id, obB.id); // left at Clarification (FO), pending Finance Officer
+
+    // obC/obD/obE (lines C, D, E's Original Budget counterparts) are left
+    // exactly as Finance Admin's rollover bootstrapped them — Draft, zero
+    // periods, no reviewers — Branch Rep hasn't gotten to them yet.
+
+    setApiUser(chenYu.id);
+    await api.budgetPeriods.lock('ANNUAL'); // flows the Approved OB total back into MTP's FY27 figure
+
+    // ---------- Block Budget: roll forward from MTP ----------
+    // The real `open()` action requires every other exercise to be Draft,
+    // which Annual Budget no longer is (kept Locked on purpose so its OB
+    // lines stay visible — see belongsToCurrentCycle). Block Budget lines
+    // are never filtered by cycle, so calling the same rollover the real
+    // action would call, directly, is safe and produces identical data;
+    // only the exercise's own period record ends up at Draft (with its
+    // Start Year already set) instead of Open, which Finance Admin can
+    // still do for real at any time — re-running the rollover is
+    // idempotent (updates existing lines in place, never duplicates).
+    await api.budgetPeriods.setBlockBudgetStartYear(2028);
+    rollBlockBudgetForward(2028, chenYu.id);
+    saveDb();
+
+    const blockA = findBySource('BLOCK', lineA.id);
+    setApiUser(jasonYong.id);
+    await api.budgetLines.update(
+      blockA.id,
+      {
+        reviewer1UserId: jonathanTay.id,
+        reviewer2UserId: andyOng.id,
+        approverUserId: cherylSim.id, // IT project — CIO gates the final approval
+        // Rounding in the recurring-growth formula means a couple of this
+        // window's consecutive years land a hair over the 5% IT threshold
+        // even though the underlying rate is exactly 5% — cover every
+        // year after the window's first (which is never flagged) so
+        // whichever one Block Budget's own variance check picks is ready.
+        justifications: {
+          FY29: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
+          FY30: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
+          FY31: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
+          FY32: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
+        },
+      },
+      2028
+    );
+    await submitAs(jasonYong.id, blockA.id);
+    await approveAs(jonathanTay.id, blockA.id);
+    await approveAs(chenYu.id, blockA.id);
+    await approveAs(francineChua.id, blockA.id); // has a Reviewer 2 -> Pending Approval (Reviewer 2)
+    await approveAs(andyOng.id, blockA.id); // Reviewer 2 -> Pending Approval (CIO), IT project
+    await approveAs(cherylSim.id, blockA.id); // CIO -> Approved
+
+    const blockB = findBySource('BLOCK', lineB.id);
+    setApiUser(jasonYong.id);
+    await api.budgetLines.update(blockB.id, { reviewer1UserId: andyOng.id, approverUserId: raineNg.id }, 2028);
+    await submitAs(jasonYong.id, blockB.id);
+    await approveAs(andyOng.id, blockB.id); // left at Clarification (FO)
+
+    // blockC/blockD/blockE are left exactly as the rollover produced them
+    // — Draft, no reviewers — same "not yet touched" variety as their MTP
+    // and Original Budget counterparts.
+  } catch (e) {
+    // A seeding failure would otherwise leave a half-built, inconsistent
+    // demo in place (and the UI's own "already seeded?" checks, if any
+    // existed, would never retry it) — fall back to a clean, working,
+    // empty app rather than a broken one.
+    console.error('loadSampleData failed, resetting to a clean empty state', e);
+    resetDb();
+    throw e instanceof Error ? e : new Error(String(e));
+  } finally {
+    setApiUser(prevUserId);
+  }
+}

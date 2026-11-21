@@ -6,10 +6,10 @@
 // AuthContext.tsx), the same way a real server would enforce it against a
 // logged-in session.
 import { getDb, nextId, saveDb, type StoredBudgetLine } from './local/db';
-import { applyRecurringInflation, emptyPeriods, fyOfDate, periodKeys, roundToNearestHundred, sumPeriods, type InflationRates } from './lib/calc';
+import { applyRecurringInflation, emptyPeriods, fyKey, fyOfDate, periodKeys, roundToNearestHundred, sumPeriods, type InflationRates } from './lib/calc';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind, EXERCISE_LABEL } from './lib/budgetPeriod';
 import { computeMainstreaming } from './lib/mainstreaming';
-import { justificationSatisfied } from './lib/variance';
+import { annualJustificationSatisfied, justificationSatisfied } from './lib/variance';
 import {
   canApprove,
   canCreateProject,
@@ -129,6 +129,47 @@ function owningProjectOf(line: Pick<StoredBudgetLine, 'projectId' | 'assignedToU
   return line.projectId ? getProjectOrThrow(line.projectId) : { openedByUserId: line.assignedToUserId };
 }
 
+// The FY a freshly created Revised/Original Budget line belongs to: the
+// Annual Budget exercise's Start Date, if it's currently active (Open,
+// Closed for Submission, or Closed and Locked) — null while it's still
+// Draft (never opened), same as how an ad hoc MTP line has no FY concept.
+function currentAnnualSubmissionYear(): number | null {
+  const period = getBudgetPeriod('ANNUAL');
+  return period.startDate ? fyOfDate(period.startDate) : null;
+}
+
+// MTP rolls every line forward in place (same id, new periods each cycle),
+// so there's only ever one row per MTP line regardless of how many MTP
+// cycles have run. RB/OB instead get a brand-new record every Annual
+// Budget cycle (see rollAnnualBudgetForward) — without this filter, every
+// past cycle's lines would stay visible forever alongside the current
+// one. MTP/Block lines (submissionYear always null) pass through
+// unfiltered.
+function belongsToCurrentCycle(line: Pick<StoredBudgetLine, 'kind' | 'submissionYear'>): boolean {
+  if (line.kind !== 'RB' && line.kind !== 'OB') return true;
+  return line.submissionYear === currentAnnualSubmissionYear();
+}
+
+// Shared by listAllMtp (kinds=['MTP']) and the Annual Budget Revised/
+// Original Budget Line Item pages (kinds=['RB','OB']): every line of these
+// kinds the acting user can see, whether tied to a Project Profile or ad
+// hoc (projectId === null).
+function listByKindsImpl(kinds: BudgetKind[]): BudgetLine[] {
+  const user = requireUser();
+  const db = getDb();
+  const teamMembersByProject = new Map<string, string[]>();
+  for (const m of db.teamMembers) {
+    const arr = teamMembersByProject.get(m.projectId) ?? [];
+    arr.push(m.userId);
+    teamMembersByProject.set(m.projectId, arr);
+  }
+  return db.budgetLines
+    .filter((l) => kinds.includes(l.kind))
+    .filter(belongsToCurrentCycle)
+    .filter((l) => canSeeLine(l, user, l.projectId ? teamMembersByProject.get(l.projectId) ?? [] : []))
+    .map(withComputed);
+}
+
 function withComputed(line: StoredBudgetLine): BudgetLine {
   return { ...line, status: statusFor(line), total: sumPeriods(line.periods) };
 }
@@ -182,6 +223,118 @@ function rollMtpLinesForward(newStartYear: number, byUserId: string) {
     line.step = 'DRAFT';
     pushHistory(line, byUserId, 'rollover', from, line.step, `Rolled forward to the ${newKeys[0]}–${newKeys[newKeys.length - 1]} Medium Term Projection window`);
     line.updatedAt = now();
+  }
+}
+
+// Finance Admin opens Annual Budget: builds this cycle's Revised Budget
+// lines as a plain duplicate of last FY's Original Budget lines (Branch
+// Rep edits from there — the duplicate's own total, frozen into
+// previousPeriods, is "Approved Original Budget"; see lib/variance.ts), and
+// separately rebuilds this cycle's Original Budget lines by syncing
+// against the current Medium Term Projection: a last-FY Original Budget
+// line whose parent MTP line now has a zero FY budget (or was removed
+// entirely) is dropped, and an MTP line with no existing Original Budget
+// counterpart gets a brand-new one, catalog fields pulled down, periods
+// starting at zero ("no comparison" — Branch Rep fills them in from
+// scratch). "Last FY" is matched by `submissionYear`, not "every Original
+// Budget line ever", so this also cleanly handles the first-ever cycle: no
+// matching lines exist yet, so Revised Budget starts empty and Original
+// Budget is built entirely fresh from current MTP lines.
+function rollAnnualBudgetForward(newSubmissionYear: number, byUserId: string) {
+  const db = getDb();
+  const prevSubmissionYear = newSubmissionYear - 1;
+  const newMtpFyKey = fyKey(newSubmissionYear);
+  const lastFyOriginal = db.budgetLines.filter((l) => l.kind === 'OB' && l.submissionYear === prevSubmissionYear);
+
+  function freshLine(
+    kind: 'RB' | 'OB',
+    source: Pick<
+      StoredBudgetLine,
+      | 'projectId'
+      | 'description'
+      | 'opsOrDev'
+      | 'account'
+      | 'subAcct'
+      | 'fundingEntryId'
+      | 'recurring'
+      | 'costCentre'
+      | 'itProject'
+      | 'ictExp'
+      | 'buildOrBuy'
+      | 'basis'
+      | 'assignedToUserId'
+    >,
+    periods: Record<string, number>,
+    previousPeriods: Record<string, number>,
+    sourceMtpLineId: string | null
+  ): StoredBudgetLine {
+    return {
+      id: nextId('line'),
+      projectId: source.projectId,
+      kind,
+      step: 'DRAFT',
+      description: source.description,
+      opsOrDev: source.opsOrDev,
+      account: source.account,
+      subAcct: source.subAcct,
+      fundingEntryId: source.fundingEntryId,
+      recurring: source.recurring,
+      costCentre: source.costCentre,
+      itProject: source.itProject,
+      ictExp: source.ictExp,
+      buildOrBuy: source.buildOrBuy,
+      basis: source.basis,
+      budgetType: kind,
+      periods,
+      previousPeriods,
+      justifications: {},
+      justificationForVariance: '',
+      submissionYear: newSubmissionYear,
+      sourceMtpLineId,
+      assignedToUserId: source.assignedToUserId,
+      reviewer1UserId: null,
+      reviewer2UserId: null,
+      approverUserId: null,
+      financeOfficerUserId: null,
+      history: [],
+      createdAt: now(),
+      updatedAt: now(),
+    };
+  }
+
+  // 1. Revised Budget: plain duplicate of last FY's Original Budget lines.
+  for (const ob of lastFyOriginal) {
+    const rb = freshLine('RB', ob, { ...ob.periods }, { ...ob.periods }, ob.sourceMtpLineId);
+    db.budgetLines.push(rb);
+    pushHistory(rb, byUserId, 'rollover', 'DRAFT', 'DRAFT', `Duplicated from FY${String(prevSubmissionYear % 100).padStart(2, '0')} Original Budget`);
+  }
+
+  // 2. Original Budget: carry forward every last-FY line whose parent MTP
+  // line (if any) still has a nonzero FY budget this cycle.
+  const mtpLines = db.budgetLines.filter((l) => l.kind === 'MTP');
+  const mirroredMtpIds = new Set(lastFyOriginal.map((l) => l.sourceMtpLineId).filter((x): x is string => !!x));
+  for (const ob of lastFyOriginal) {
+    if (ob.sourceMtpLineId) {
+      const parent = mtpLines.find((m) => m.id === ob.sourceMtpLineId);
+      const parentFyAmount = parent ? Number(parent.periods[newMtpFyKey] ?? 0) : 0;
+      if (!parent || parentFyAmount === 0) continue; // zeroed out (or removed) in MTP — drop this line
+    }
+    const emptyOb = emptyPeriods('OB', newSubmissionYear);
+    const newOb = freshLine('OB', ob, { ...emptyOb }, { ...emptyOb }, ob.sourceMtpLineId);
+    db.budgetLines.push(newOb);
+    pushHistory(newOb, byUserId, 'rollover', 'DRAFT', 'DRAFT', 'Carried forward from last FY Original Budget');
+  }
+
+  // New MTP lines not yet mirrored into Original Budget, with a nonzero FY
+  // budget this cycle: add them fresh, catalog fields pulled down.
+  for (const mtp of mtpLines) {
+    if (mirroredMtpIds.has(mtp.id)) continue;
+    const fyAmount = Number(mtp.periods[newMtpFyKey] ?? 0);
+    if (fyAmount === 0) continue;
+    const emptyOb = emptyPeriods('OB', newSubmissionYear);
+    const newOb = freshLine('OB', mtp, { ...emptyOb }, { ...emptyOb }, mtp.id);
+    db.budgetLines.push(newOb);
+    pushHistory(newOb, byUserId, 'rollover', 'DRAFT', 'DRAFT', 'Added from Medium Term Projection');
   }
 }
 
@@ -629,33 +782,23 @@ export const api = {
     // Cross-project view for Medium Term Projection > Budget Line Item: every
     // MTP-kind line the acting user can see, whether it belongs to a Project
     // Profile or is a standalone ad hoc line (projectId === null).
-    listAllMtp: () =>
-      run(() => {
-        const user = requireUser();
-        const db = getDb();
-        const teamMembersByProject = new Map<string, string[]>();
-        for (const m of db.teamMembers) {
-          const arr = teamMembersByProject.get(m.projectId) ?? [];
-          arr.push(m.userId);
-          teamMembersByProject.set(m.projectId, arr);
-        }
-        return db.budgetLines
-          .filter((l) => l.kind === 'MTP')
-          .filter((l) => canSeeLine(l, user, l.projectId ? teamMembersByProject.get(l.projectId) ?? [] : []))
-          .map(withComputed);
-      }),
+    listAllMtp: () => run(() => listByKindsImpl(['MTP'])),
+    // Generic version of listAllMtp for Annual Budget's Revised/Original
+    // Budget Line Item pages, which span two kinds (RB and OB) at once.
+    listByKinds: (kinds: BudgetKind[]) => run(() => listByKindsImpl(kinds)),
     // Action-queue view for Review Phase / Approval Phase: every line of
-    // this kind the acting user can act on *right now*, regardless of
+    // these kinds the acting user can act on *right now*, regardless of
     // tagging or team membership — needed because a CIO-group user (a
     // group-based actor, not a tagged one) must see a line the moment it
     // reaches Pending Approval (CIO), even if they were never tagged or
     // added as a team member.
-    listActionQueue: (kind: BudgetKind) =>
+    listActionQueue: (kinds: BudgetKind[]) =>
       run(() => {
         const user = requireUser();
         const db = getDb();
         return db.budgetLines
-          .filter((l) => l.kind === kind)
+          .filter((l) => kinds.includes(l.kind))
+          .filter(belongsToCurrentCycle)
           .filter((l) => userCanAct(l, user, owningProjectOf(l)))
           .map(withComputed);
       }),
@@ -685,6 +828,9 @@ export const api = {
           periods: emptyPeriods(kind, simulationYear),
           previousPeriods: emptyPeriods(kind, simulationYear),
           justifications: {},
+          justificationForVariance: '',
+          submissionYear: kind === 'RB' || kind === 'OB' ? currentAnnualSubmissionYear() : null,
+          sourceMtpLineId: null,
           assignedToUserId: user.id,
           reviewer1UserId: null,
           reviewer2UserId: null,
@@ -698,16 +844,17 @@ export const api = {
         saveDb();
         return withComputed(line);
       }),
-    // Adds a Budget Line Item from Medium Term Projection, independent of any
+    // Adds a Budget Line Item from Medium Term Projection (or an Annual
+    // Budget Revised/Original Budget Line Item page), independent of any
     // project tab. `projectId` is null for an ad hoc line (no Project
     // Profile; owned by the acting user) or the id of a project the acting
     // user is a team member of (or owning Branch Rep of) — in that case the
     // line is owned by that project's Branch Rep, exactly as if it had been
-    // added from that project's own MTP tab, so it shows up there too.
-    createAdHoc: (simulationYear: number, projectId: string | null) =>
+    // added from that project's own tab, so it shows up there too.
+    createAdHoc: (kind: BudgetKind, simulationYear: number, projectId: string | null) =>
       run(() => {
         const user = requireUser();
-        requireBudgetPeriodEditable('MTP', user);
+        requireBudgetPeriodEditable(kind, user);
         const db = getDb();
         let assignedToUserId = user.id;
         if (projectId !== null) {
@@ -722,7 +869,7 @@ export const api = {
         const line: StoredBudgetLine = {
           id: nextId('line'),
           projectId,
-          kind: 'MTP',
+          kind,
           step: 'DRAFT',
           description: '',
           opsOrDev: '',
@@ -735,13 +882,16 @@ export const api = {
           ictExp: '',
           buildOrBuy: '',
           basis: '',
-          budgetType: null,
+          budgetType: kind === 'RB' || kind === 'OB' ? kind : null,
           // A brand-new line has no prior submission to compare against —
           // last FY's amount is taken as 0, so any figure the Branch Rep
           // enters is an unconditional variance (see lib/variance.ts).
-          periods: emptyPeriods('MTP', simulationYear),
-          previousPeriods: emptyPeriods('MTP', simulationYear),
+          periods: emptyPeriods(kind, simulationYear),
+          previousPeriods: emptyPeriods(kind, simulationYear),
           justifications: {},
+          justificationForVariance: '',
+          submissionYear: kind === 'RB' || kind === 'OB' ? currentAnnualSubmissionYear() : null,
+          sourceMtpLineId: null,
           assignedToUserId,
           reviewer1UserId: null,
           reviewer2UserId: null,
@@ -757,14 +907,14 @@ export const api = {
       }),
     // Attaches (or detaches, with projectId = null) an ad hoc Budget Line
     // Item to a Project Profile. Once attached it shows up in that project's
-    // own MTP tab too, since it's the same underlying record.
+    // own tab too, since it's the same underlying record.
     setProject: (id: string, projectId: string | null) =>
       run(() => {
         const user = requireUser();
         const db = getDb();
         const line = db.budgetLines.find((l) => l.id === id);
         if (!line) throw new Error('Not found');
-        if (line.kind !== 'MTP') throw new Error('Only Medium Term Projection lines can be attached to a project here');
+        if (line.kind === 'BLOCK') throw new Error('Block Budget lines cannot be attached to a project here');
         const currentProject = owningProjectOf(line);
         if (!isOwningBranchRep(user, currentProject)) throw new Error("Only the line's owning Branch Rep can change its Project Title");
         requireBudgetPeriodEditable(line.kind, user);
@@ -825,6 +975,9 @@ export const api = {
         if ('justifications' in data && data.justifications) {
           line.justifications = { ...line.justifications, ...data.justifications };
         }
+        if ('justificationForVariance' in data && data.justificationForVariance !== undefined) {
+          line.justificationForVariance = data.justificationForVariance;
+        }
 
         const rates = getInflationRates();
         const keys = periodKeys(line.kind, simulationYear);
@@ -876,8 +1029,11 @@ export const api = {
         if (!line.reviewer1UserId || !line.reviewer2UserId || !line.approverUserId) {
           throw new Error('Reviewer 1, Reviewer 2 and Approver must all be selected before submitting');
         }
-        if (!justificationSatisfied(line, getInflationRates())) {
+        if (line.kind === 'MTP' && !justificationSatisfied(line, getInflationRates())) {
           throw new Error('This line has a variance requiring an MTP Variance justification before it can be submitted');
+        }
+        if (line.kind === 'RB' && !annualJustificationSatisfied(line)) {
+          throw new Error('This line has a variance requiring a Justification for Variance before it can be submitted');
         }
         const from = line.step;
         line.step = nextOnSubmit(line.step);
@@ -973,6 +1129,7 @@ export const api = {
         if (other) throw new Error(`${EXERCISE_LABEL[other.type]} is currently ${other.status === 'Locked' ? 'Closed and Locked' : 'Open'} — only one budget exercise can be open at a time`);
 
         if (type === 'MTP') rollMtpLinesForward(fyOfDate(startDate), user.id);
+        if (type === 'ANNUAL') rollAnnualBudgetForward(fyOfDate(startDate), user.id);
 
         period.status = 'Open';
         period.startDate = startDate;

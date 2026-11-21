@@ -61,7 +61,7 @@ export function BudgetLineItemPage() {
   }, [lines, simulationYear]);
 
   async function addNew() {
-    await api.budgetLines.createAdHoc(simulationYear, null);
+    await api.budgetLines.createAdHoc('MTP', simulationYear, null);
     reload();
   }
 

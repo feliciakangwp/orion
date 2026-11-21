@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
 import { canApprove, canReject, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
+import { annualVarianceAmount, approvedOriginalBudgetOf } from '../lib/variance';
 import type { AccountCode, BudgetLine, CostCentreCode, FundingEntry, FundingSource, Project, User } from '../types';
 
 // A line's owning Branch Rep for ownership/edit checks — the real project's
@@ -59,6 +60,7 @@ export function BudgetLineRow({
   const editable = isBranchRepOwner && isEditableByBranchRep(line.step) && periodEditable;
   const canAct = (currentUser ? userCanAct(line, currentUser, owner) : false) && periodEditable;
   const showItFields = line.itProject === 'Yes';
+  const isAnnualBudget = line.kind === 'RB' || line.kind === 'OB';
 
   // No department scoping: every user with the matching group is eligible.
   const reviewerOptions = users.filter((u) => u.groups.includes('DY Head') || u.groups.includes('Head'));
@@ -137,6 +139,11 @@ export function BudgetLineRow({
         <StatusBadge status={line.status} />
         {error && <div className="mt-1 max-w-[10rem] text-[10px] text-rose-600">{error}</div>}
       </td>
+      {isAnnualBudget && (
+        <td className="px-2 py-2 text-xs text-slate-600">
+          {line.submissionYear != null ? `FY${String(line.submissionYear % 100).padStart(2, '0')}` : '—'}
+        </td>
+      )}
       <td className="px-2 py-2">
         <textarea
           className={`${cellInput} min-h-[2.5rem] w-40`}
@@ -285,7 +292,18 @@ export function BudgetLineRow({
           onBlur={(e) => patch({ basis: e.target.value })}
         />
       </td>
-      <td className="px-2 py-2 text-right text-xs font-semibold text-slate-700">{currency(line.total)}</td>
+      {isAnnualBudget && (
+        <>
+          <td className="px-2 py-2 text-right text-xs text-slate-600">
+            {line.kind === 'RB' ? currency(approvedOriginalBudgetOf(line)) : '—'}
+          </td>
+          <td className="px-2 py-2 text-right text-xs font-semibold text-slate-700">{currency(line.total)}</td>
+          <td className="px-2 py-2 text-right text-xs text-slate-600">
+            {line.kind === 'RB' ? currency(annualVarianceAmount(line)) : '—'}
+          </td>
+        </>
+      )}
+      {!isAnnualBudget && <td className="px-2 py-2 text-right text-xs font-semibold text-slate-700">{currency(line.total)}</td>}
       {keys.map((key, i) => {
         const lockedByRecurring = line.recurring === 'Yes' && i > 0;
         return (

@@ -3,7 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Card, currency } from '../components/ui';
 import { canEditFinSupported } from '../lib/workflow';
-import type { FinSupportedLineWithMainstreaming, Project } from '../types';
+import type { BudgetKind, FinSupportedLineWithMainstreaming, Project } from '../types';
 
 function FinSupportedRow({
   line,
@@ -76,32 +76,41 @@ function FinSupportedRow({
 // line in Budget Line Item. Once the project's MTP budget period is
 // Closed for Submission (or later), any spend beyond its external funding
 // pot is shown split out as Mainstreaming.
-export function FinSupportedPage() {
+export function FinSupportedPage({
+  kinds = ['MTP'],
+  title = 'Fin Supported',
+  emptyMessage = 'No MTP lines have reached Approved yet.',
+}: {
+  kinds?: BudgetKind[];
+  title?: string;
+  emptyMessage?: string;
+}) {
   const { currentUser } = useAuth();
-  const [lines, setLines] = useState<FinSupportedLineWithMainstreaming[]>([]);
+  const [allLines, setAllLines] = useState<FinSupportedLineWithMainstreaming[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
 
   function reload() {
-    api.finSupportedLines.list().then(setLines);
+    api.finSupportedLines.list().then(setAllLines);
     api.projects.list().then(setProjects);
   }
   useEffect(reload, []);
 
+  const lines = useMemo(() => allLines.filter((l) => kinds.includes(l.kind)), [allLines, kinds.join(',')]);
   const editable = !!currentUser && canEditFinSupported(currentUser);
   const projectOf = (id: string | null) => (id ? projects.find((p) => p.id === id) ?? null : null);
   const keys = useMemo(() => (lines[0] ? Object.keys(lines[0].periods) : []), [lines]);
   const anyMainstreaming = lines.some((l) => l.mainstreamingPeriods && Object.values(l.mainstreamingPeriods).some((v) => v > 0));
 
   function updateLocal(updated: FinSupportedLineWithMainstreaming) {
-    setLines((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+    setAllLines((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
   }
 
   return (
     <div>
       <div className="mb-4">
-        <h1 className="text-xl font-semibold text-slate-800">Fin Supported</h1>
+        <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Every MTP line that has reached Approved, duplicated here with figures rounded to the nearest 100 (amounts
+          Every line that has reached Approved, duplicated here with figures rounded to the nearest 100 (amounts
           under 100 are left as they are). {editable ? 'You can edit the figures here.' : 'View only.'} Editing this
           copy never changes the original line in Budget Line Item.
           {anyMainstreaming && (
@@ -138,7 +147,7 @@ export function FinSupportedPage() {
             {lines.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                  No MTP lines have reached Approved yet.
+                  {emptyMessage}
                 </td>
               </tr>
             )}

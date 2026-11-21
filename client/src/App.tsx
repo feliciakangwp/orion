@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { Layout } from './components/Layout';
+import { AnnualBudgetVariancePage } from './pages/AnnualBudgetVariancePage';
+import { OriginalBudgetLineItemPage, RevisedBudgetLineItemPage } from './pages/AnnualBudgetLineItemPage';
 import { ApprovalPhasePage } from './pages/ApprovalPhasePage';
 import { BudgetLineItemPage } from './pages/BudgetLineItemPage';
 import { ClarificationFMPage } from './pages/ClarificationFMPage';
@@ -39,6 +41,15 @@ export default function App() {
         <Route path="/mtp/approval-phase" element={<ApprovalPhasePage />} />
         <Route path="/mtp/fin-supported" element={<FinSupportedPage />} />
         <Route path="/mtp/inactive-users" element={<MtpInactiveUsersPage />} />
+        <Route path="/annual/revised-budget-line-item" element={<RevisedBudgetLineItemPage />} />
+        <Route path="/annual/original-budget-line-item" element={<OriginalBudgetLineItemPage />} />
+        <Route path="/annual/variance" element={<AnnualBudgetVariancePage />} />
+        <Route path="/annual/review-phase" element={<ReviewPhasePage kinds={['RB', 'OB']} title="Review Phase" description="Annual Budget lines currently awaiting your action at Review or Clarification. A line appears here only once it's actually routed to you." />} />
+        <Route path="/annual/clarification-fm" element={<ClarificationFMPage kinds={['RB', 'OB']} title="Clarification (FM)" description="Annual Budget lines now routed to you for clarification." emptyMessage="No Annual Budget lines are currently routed to you." />} />
+        <Route path="/annual/clarification-fo" element={<ClarificationFOPage kinds={['RB', 'OB']} title="Clarification (FO)" description="Annual Budget lines still with Finance Officer in the clarification stage — not yet your turn." emptyMessage="No Annual Budget lines are currently with Finance Officer." />} />
+        <Route path="/annual/approval-phase" element={<ApprovalPhasePage kinds={['RB', 'OB']} title="Approval Phase" description="Annual Budget lines currently awaiting your approval (Reviewer 2, CIO, or Approver). A line appears here only once it's actually routed to you." />} />
+        <Route path="/annual/fin-supported" element={<FinSupportedPage kinds={['RB', 'OB']} title="FIN Supported" emptyMessage="No Annual Budget lines have reached Approved yet." />} />
+        <Route path="/annual/inactive-users" element={<MtpInactiveUsersPage kinds={['RB', 'OB']} title="Annual Budget with Inactive User" description="Annual Budget lines tagged to a user who is now Inactive in User Management — reassign these before they can move forward." emptyMessage="No Annual Budget lines are tagged to an Inactive user." />} />
         <Route path="/finance-admin/funding" element={<FinanceAdminFundingPage />} />
         <Route path="/finance-admin/account" element={<FinanceAdminAccountPage />} />
         <Route path="/finance-admin/cost-centre" element={<FinanceAdminCostCentrePage />} />

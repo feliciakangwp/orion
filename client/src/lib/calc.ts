@@ -8,7 +8,7 @@ export function periodSpan(kind: BudgetKind): number {
   return 12;
 }
 
-function fyKey(year: number): string {
+export function fyKey(year: number): string {
   return `FY${String(year % 100).padStart(2, '0')}`;
 }
 

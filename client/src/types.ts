@@ -215,17 +215,32 @@ export interface BudgetLine {
   budgetType: BudgetType | null;
   periods: Record<string, number>;
   total: number; // computed
-  // MTP-only (see lib/variance.ts): each period's value as of the last
-  // rollover/creation, frozen until the next one — any edit a Branch Rep
-  // makes afterward is what MTP Variance compares against. A brand-new
-  // line (no Project Profile history) gets an all-zero snapshot, so any
-  // nonzero figure they enter is automatically a 100%+ variance.
+  // MTP: each period's value as of the last rollover/creation, frozen
+  // until the next one — any edit a Branch Rep makes afterward is what
+  // MTP Variance compares against. RB: the Original Budget line's periods
+  // at the moment this Revised Budget line was duplicated from it — its
+  // *sum* is "Approved Original Budget" (see lib/variance.ts). OB: unused
+  // (always all-zero — "no comparison"). A brand-new line (no history)
+  // gets an all-zero snapshot, so any nonzero figure is automatically a
+  // full variance.
   previousPeriods: Record<string, number>;
-  // FY key -> justification text. Only ever meaningfully required for the
-  // earliest FY whose variance currently exceeds the Inflation Rate
-  // threshold (see lib/variance.ts) — entries for other years are kept
-  // but ignored if the required year shifts.
+  // MTP only: FY key -> justification text. Only ever meaningfully
+  // required for the earliest FY whose variance currently exceeds the
+  // Inflation Rate threshold (see lib/variance.ts) — entries for other
+  // years are kept but ignored if the required year shifts.
   justifications: Record<string, string>;
+  // RB only: a single justification for the line's total variance
+  // (Approved Original Budget vs Total Budget Requested) — unlike MTP's
+  // per-FY justifications, Annual Budget variance is one total number.
+  justificationForVariance: string;
+  // RB/OB only: the Financial Year this submission belongs to (e.g. 2027
+  // for "FY27"), set from the Annual Budget Period's Start Date at the
+  // moment the line is created or rolled forward. Null for MTP/Block.
+  submissionYear: number | null;
+  // RB/OB only: the MTP line this one was generated from/kept in sync
+  // with across Annual Budget rollovers (see rollAnnualBudgetForward in
+  // api.ts) — null for a line added by hand, with no MTP counterpart.
+  sourceMtpLineId: string | null;
   assignedToUserId: string;
   reviewer1UserId: string | null;
   reviewer2UserId: string | null;

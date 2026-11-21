@@ -3,29 +3,39 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Card } from '../components/ui';
 import { MtpActionRow } from '../components/MtpActionRow';
-import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus } from '../lib/budgetPeriod';
-import type { BudgetLine, BudgetPeriod, Project } from '../types';
+import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind } from '../lib/budgetPeriod';
+import type { BudgetKind, BudgetLine, BudgetPeriod, Project } from '../types';
 
-// Every MTP line currently requiring the acting user's action at the
-// Review or Clarification stage (Reviewer 1; Finance Officer or Finance
-// Manager during Clarification; or the Branch Rep clarifying a Finance
-// Officer reject). A line only shows up here the moment it's actually
-// theirs to act on, not before.
-export function ReviewPhasePage() {
+// Every line of the given kind(s) currently requiring the acting user's
+// action at the Review or Clarification stage (Reviewer 1; Finance Officer
+// or Finance Manager during Clarification; or the Branch Rep clarifying a
+// Finance Officer reject). A line only shows up here the moment it's
+// actually theirs to act on, not before. Reused by both Medium Term
+// Projection (kinds=['MTP']) and Annual Budget (kinds=['RB','OB']).
+export function ReviewPhasePage({
+  kinds = ['MTP'],
+  title = 'Review Phase',
+  description = "MTP lines currently awaiting your action at Review or Clarification. A line appears here only once it's actually routed to you.",
+}: {
+  kinds?: BudgetKind[];
+  title?: string;
+  description?: string;
+}) {
   const { currentUser, simulationDate } = useAuth();
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
 
   function reload() {
-    api.budgetLines.listActionQueue('MTP').then(setLines);
+    api.budgetLines.listActionQueue(kinds).then(setLines);
     api.projects.list().then(setProjects);
     api.budgetPeriods.list().then(setBudgetPeriods);
   }
-  useEffect(reload, [currentUser?.id]);
+  useEffect(reload, [currentUser?.id, kinds.join(',')]);
 
-  const mtpPeriod = budgetPeriods.find((p) => p.type === 'MTP');
-  const periodStatus = mtpPeriod ? effectiveBudgetPeriodStatus(mtpPeriod, simulationDate) : 'Draft';
+  const exerciseType = exerciseTypeForKind(kinds[0]);
+  const period = budgetPeriods.find((p) => p.type === exerciseType);
+  const periodStatus = period ? effectiveBudgetPeriodStatus(period, simulationDate) : 'Draft';
   const periodEditable = !!currentUser && canActOnBudgetPeriod(periodStatus, currentUser);
 
   const projectOf = (id: string | null) => (id ? projects.find((p) => p.id === id) ?? null : null);
@@ -38,11 +48,8 @@ export function ReviewPhasePage() {
   return (
     <div>
       <div className="mb-4">
-        <h1 className="text-xl font-semibold text-slate-800">Review Phase</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          MTP lines currently awaiting your action at Review or Clarification. A line appears here only once it's
-          actually routed to you.
-        </p>
+        <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
       </div>
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[800px] text-left text-sm">

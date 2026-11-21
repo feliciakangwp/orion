@@ -1,4 +1,4 @@
-import type { InflationRates } from './calc';
+import { sumPeriods, type InflationRates } from './calc';
 import type { BudgetLine, YesNo } from '../types';
 
 export interface YearVariance {
@@ -70,4 +70,27 @@ export function justificationSatisfied(
   const { requiredJustificationKey } = lineVarianceInfo(line, rates);
   if (!requiredJustificationKey) return true;
   return !!line.justifications[requiredJustificationKey]?.trim();
+}
+
+// ---------- Annual Budget (Revised Budget) variance ----------
+// Unlike MTP's per-FY, threshold-gated variance, a Revised Budget line's
+// variance is a single total: Approved Original Budget (the sum of what
+// was duplicated in from the Original Budget line) minus Total Budget
+// Requested (the sum of its current, possibly Branch-Rep-edited, periods).
+// Any nonzero amount needs a justification — there's no percentage
+// threshold here.
+
+export function approvedOriginalBudgetOf(line: Pick<BudgetLine, 'previousPeriods'>): number {
+  return sumPeriods(line.previousPeriods);
+}
+
+export function annualVarianceAmount(line: Pick<BudgetLine, 'periods' | 'previousPeriods'>): number {
+  return approvedOriginalBudgetOf(line) - sumPeriods(line.periods);
+}
+
+export function annualJustificationSatisfied(
+  line: Pick<BudgetLine, 'periods' | 'previousPeriods' | 'justificationForVariance'>
+): boolean {
+  if (annualVarianceAmount(line) === 0) return true;
+  return !!line.justificationForVariance?.trim();
 }

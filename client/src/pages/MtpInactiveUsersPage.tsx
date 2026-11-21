@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Card, StatusBadge } from '../components/ui';
-import type { BudgetLine, Project, User } from '../types';
+import type { BudgetKind, BudgetLine, Project, User } from '../types';
 
 const TAGGED_ROLES: Array<{ field: keyof BudgetLine; label: string }> = [
   { field: 'assignedToUserId', label: 'Assigned to' },
@@ -16,16 +16,26 @@ const TAGGED_ROLES: Array<{ field: keyof BudgetLine; label: string }> = [
 // Reviewer 1/2, Approver, or Finance Officer) now set Inactive in User
 // Management — a line stuck on someone no longer active needs a new
 // assignee before it can move forward.
-export function MtpInactiveUsersPage() {
+export function MtpInactiveUsersPage({
+  kinds = ['MTP'],
+  title = 'MTP with Inactive Users',
+  description = 'MTP lines tagged to a user who is now Inactive in User Management — reassign these before they can move forward.',
+  emptyMessage = 'No MTP lines are tagged to an Inactive user.',
+}: {
+  kinds?: BudgetKind[];
+  title?: string;
+  description?: string;
+  emptyMessage?: string;
+}) {
   const { currentUser, users } = useAuth();
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
 
   function reload() {
-    api.budgetLines.listAllMtp().then(setLines);
+    api.budgetLines.listByKinds(kinds).then(setLines);
     api.projects.list().then(setProjects);
   }
-  useEffect(reload, [currentUser?.id]);
+  useEffect(reload, [currentUser?.id, kinds.join(',')]);
 
   const userOf = (id: string | null): User | undefined => (id ? users.find((u) => u.id === id) : undefined);
   const projectOf = (id: string | null) => (id ? projects.find((p) => p.id === id) ?? null : null);
@@ -47,11 +57,8 @@ export function MtpInactiveUsersPage() {
   return (
     <div>
       <div className="mb-4">
-        <h1 className="text-xl font-semibold text-slate-800">MTP with Inactive Users</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          MTP lines tagged to a user who is now Inactive in User Management — reassign these before they can move
-          forward.
-        </p>
+        <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
       </div>
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[800px] text-left text-sm">
@@ -81,7 +88,7 @@ export function MtpInactiveUsersPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
-                  No MTP lines are tagged to an Inactive user.
+                  {emptyMessage}
                 </td>
               </tr>
             )}

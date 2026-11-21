@@ -38,13 +38,12 @@ export interface DbShape {
   seq: number;
 }
 
-// Bumped again from orion.db.v5: sample named users (generic one-per-group
-// seeds now Inactive), Mainstreaming funding source, Account/CostCentre
-// restructures (level/opsOrDev/status; code/name/type/nature/FinanceOfficer)
-// and new FundingEntry fields (pot/fund amount/dates/cost centres) — this
-// is a clean slate with a different shape, so old data is simply left
-// behind under its old key rather than migrated.
-const STORAGE_KEY = 'orion.db.v6';
+// Bumped again from orion.db.v6: BudgetLine gained three new required
+// fields (justificationForVariance, submissionYear, sourceMtpLineId) for
+// Annual Budget (Revised/Original Budget Line Item) — this is a clean
+// slate with a different shape, so old data is simply left behind under
+// its old key rather than migrated.
+const STORAGE_KEY = 'orion.db.v7';
 
 function buildSeedUsers(): User[] {
   const now = new Date().toISOString();

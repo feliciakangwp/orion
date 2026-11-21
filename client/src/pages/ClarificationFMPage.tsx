@@ -4,27 +4,40 @@ import { useAuth } from '../AuthContext';
 import { Card } from '../components/ui';
 import { MtpActionRow } from '../components/MtpActionRow';
 import { RequireGroup } from '../components/RequireGroup';
-import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus } from '../lib/budgetPeriod';
-import type { BudgetLine, BudgetPeriod, Project } from '../types';
+import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind } from '../lib/budgetPeriod';
+import type { BudgetKind, BudgetLine, BudgetPeriod, Project } from '../types';
 
-// Finance Manager's own queue: MTP lines that have just been routed to
-// her (moved here from Clarification (FO) once Finance Officer supported
-// it). Actionable, unlike Clarification (FO).
-function ClarificationFMContent() {
+// Finance Manager's own queue: lines of the given kind(s) that have just
+// been routed to her (moved here from Clarification (FO) once Finance
+// Officer supported it). Actionable, unlike Clarification (FO). Reused by
+// both Medium Term Projection (kinds=['MTP']) and Annual Budget
+// (kinds=['RB','OB']).
+function ClarificationFMContent({
+  kinds = ['MTP'],
+  title = 'Clarification (FM)',
+  description = 'MTP lines now routed to you for clarification.',
+  emptyMessage = 'No MTP lines are currently routed to you.',
+}: {
+  kinds?: BudgetKind[];
+  title?: string;
+  description?: string;
+  emptyMessage?: string;
+}) {
   const { currentUser, simulationDate } = useAuth();
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
 
   function reload() {
-    api.budgetLines.listAllMtp().then(setLines);
+    api.budgetLines.listByKinds(kinds).then(setLines);
     api.projects.list().then(setProjects);
     api.budgetPeriods.list().then(setBudgetPeriods);
   }
-  useEffect(reload, [currentUser?.id]);
+  useEffect(reload, [currentUser?.id, kinds.join(',')]);
 
-  const mtpPeriod = budgetPeriods.find((p) => p.type === 'MTP');
-  const periodStatus = mtpPeriod ? effectiveBudgetPeriodStatus(mtpPeriod, simulationDate) : 'Draft';
+  const exerciseType = exerciseTypeForKind(kinds[0]);
+  const period = budgetPeriods.find((p) => p.type === exerciseType);
+  const periodStatus = period ? effectiveBudgetPeriodStatus(period, simulationDate) : 'Draft';
   const periodEditable = !!currentUser && canActOnBudgetPeriod(periodStatus, currentUser);
 
   const projectOf = (id: string | null) => (id ? projects.find((p) => p.id === id) ?? null : null);
@@ -37,8 +50,8 @@ function ClarificationFMContent() {
   return (
     <div>
       <div className="mb-4">
-        <h1 className="text-xl font-semibold text-slate-800">Clarification (FM)</h1>
-        <p className="mt-1 text-sm text-slate-500">MTP lines now routed to you for clarification.</p>
+        <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
       </div>
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[800px] text-left text-sm">
@@ -60,7 +73,7 @@ function ClarificationFMContent() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                  No MTP lines are currently routed to you.
+                  {emptyMessage}
                 </td>
               </tr>
             )}
@@ -71,10 +84,20 @@ function ClarificationFMContent() {
   );
 }
 
-export function ClarificationFMPage() {
+export function ClarificationFMPage({
+  kinds,
+  title,
+  description,
+  emptyMessage,
+}: {
+  kinds?: BudgetKind[];
+  title?: string;
+  description?: string;
+  emptyMessage?: string;
+}) {
   return (
     <RequireGroup group="Finance Manager">
-      <ClarificationFMContent />
+      <ClarificationFMContent kinds={kinds} title={title} description={description} emptyMessage={emptyMessage} />
     </RequireGroup>
   );
 }

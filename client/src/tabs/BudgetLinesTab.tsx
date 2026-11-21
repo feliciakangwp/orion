@@ -92,6 +92,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Status</th>
+              {(kind === 'RB' || kind === 'OB') && <th className="px-2 py-2">Submission Year</th>}
               <th className="px-2 py-2">Description</th>
               <th className="px-2 py-2">Project Title</th>
               <th className="px-2 py-2">Ops/Dev</th>
@@ -105,7 +106,9 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
               <th className="px-2 py-2">ICT Exp</th>
               <th className="px-2 py-2">Build/Buy</th>
               <th className="px-2 py-2">Basis</th>
-              <th className="px-2 py-2 text-right">Total</th>
+              {(kind === 'RB' || kind === 'OB') && <th className="px-2 py-2 text-right">Approved Original Budget</th>}
+              <th className="px-2 py-2 text-right">{kind === 'RB' || kind === 'OB' ? 'Total Budget Requested' : 'Total'}</th>
+              {(kind === 'RB' || kind === 'OB') && <th className="px-2 py-2 text-right">Total Variance</th>}
               {keys.map((k) => (
                 <th key={k} className="px-1 py-2 text-right">
                   {k}
@@ -138,7 +141,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
             ))}
             {lines.length === 0 && (
               <tr>
-                <td colSpan={22} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={kind === 'RB' || kind === 'OB' ? 25 : 22} className="px-4 py-8 text-center text-slate-400">
                   {isFinance
                     ? `No ${KIND_LABEL[kind]} lines yet.`
                     : `No ${KIND_LABEL[kind]} lines visible to you yet — you'll see a line once you're tagged on it (assigned, reviewing, approving, or as its Finance Officer) or added as a project team member.`}

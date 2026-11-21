@@ -155,6 +155,14 @@ export interface BudgetPeriod {
   status: BudgetPeriodStoredStatus;
   startDate: string | null;
   endDate: string | null;
+  // BLOCK only: the calendar year whose FY is the first of Block Budget's
+  // 5-FY window (e.g. 2028 means the window is FY28-FY32) — independent of
+  // this period's own Start Date (which only governs the exercise's own
+  // workflow timing, same as every other exercise). Revised/Original
+  // Budget's reference years for a Block Budget line are always 2 and 1
+  // years before this one. Null until Finance Admin sets it, which must
+  // happen before Block Budget can be opened.
+  blockBudgetStartYear: number | null;
   updatedAt: string;
 }
 
@@ -237,9 +245,13 @@ export interface BudgetLine {
   // for "FY27"), set from the Annual Budget Period's Start Date at the
   // moment the line is created or rolled forward. Null for MTP/Block.
   submissionYear: number | null;
-  // RB/OB only: the MTP line this one was generated from/kept in sync
-  // with across Annual Budget rollovers (see rollAnnualBudgetForward in
-  // api.ts) — null for a line added by hand, with no MTP counterpart.
+  // RB/OB/BLOCK only: the MTP line this one was generated from/kept in
+  // sync with across rollovers (see rollAnnualBudgetForward and
+  // rollBlockBudgetForward in api.ts) — null for a line added by hand,
+  // with no MTP counterpart. Also how a BLOCK line looks up its
+  // Revised/Original Budget reference totals (see
+  // BlockBudgetLineWithReferences) — all three kinds sharing the same MTP
+  // line share this same id.
   sourceMtpLineId: string | null;
   assignedToUserId: string;
   reviewer1UserId: string | null;
@@ -297,6 +309,17 @@ export interface FinSupportedLine {
 // `lib/mainstreaming.ts` and `api.ts`'s `finSupportedLines.list`.
 export interface FinSupportedLineWithMainstreaming extends FinSupportedLine {
   mainstreamingPeriods: Record<string, number> | null;
+}
+
+// Computed (never stored) at read time for a BLOCK-kind line: the totals
+// of its linked Revised/Original Budget lines (same `sourceMtpLineId`,
+// matched to the Block Budget Start Year's -2/-1 reference FYs) — shown
+// as read-only reference columns on Block Budget Line Item, never part of
+// the line's own `total` (which stays just its 5 Block FYs). Null when no
+// such line exists (e.g. no Annual Budget cycle has run for that FY yet).
+export interface BlockBudgetLineWithReferences extends BudgetLine {
+  revisedBudgetTotal: number | null;
+  originalBudgetTotal: number | null;
 }
 
 // ---------- Team Members ----------

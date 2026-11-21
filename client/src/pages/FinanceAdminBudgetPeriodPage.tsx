@@ -12,13 +12,15 @@ function ExerciseCard({ period, onChanged }: { period: BudgetPeriod; onChanged: 
   const { simulationDate, simulationYear, setSimulationYear } = useAuth();
   const [startDate, setStartDate] = useState(period.startDate ?? '');
   const [endDate, setEndDate] = useState(period.endDate ?? '');
+  const [blockStartYear, setBlockStartYear] = useState(period.blockBudgetStartYear != null ? String(period.blockBudgetStartYear) : '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setStartDate(period.startDate ?? '');
     setEndDate(period.endDate ?? '');
-  }, [period.startDate, period.endDate]);
+    setBlockStartYear(period.blockBudgetStartYear != null ? String(period.blockBudgetStartYear) : '');
+  }, [period.startDate, period.endDate, period.blockBudgetStartYear]);
 
   const status = effectiveBudgetPeriodStatus(period, simulationDate);
   const startLocked = period.status !== 'Draft';
@@ -39,6 +41,19 @@ function ExerciseCard({ period, onChanged }: { period: BudgetPeriod; onChanged: 
         const fy = fyOfDate(startDate);
         if (fy !== simulationYear) setSimulationYear(fy);
       }
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveBlockStartYear() {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.budgetPeriods.setBlockBudgetStartYear(Number(blockStartYear));
       onChanged();
     } catch (e) {
       setError((e as Error).message);
@@ -133,11 +148,35 @@ function ExerciseCard({ period, onChanged }: { period: BudgetPeriod; onChanged: 
         </label>
       </div>
 
+      {period.type === 'BLOCK' && (
+        <div className="mt-4 flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Block Budget Start Year</span>
+            <input
+              type="number"
+              className={`${inputCls} w-32`}
+              value={blockStartYear}
+              disabled={period.status !== 'Draft'}
+              onChange={(e) => setBlockStartYear(e.target.value)}
+            />
+          </label>
+          {period.status === 'Draft' && blockStartYear !== String(period.blockBudgetStartYear ?? '') && (
+            <Button variant="secondary" onClick={saveBlockStartYear} disabled={busy || !blockStartYear}>
+              Save
+            </Button>
+          )}
+          <p className="w-full text-xs text-slate-400">
+            Sets the first FY of Block Budget's 5-FY window (e.g. 2028 means FY28–FY32). Must be set before Block
+            Budget can be opened; its Revised/Original Budget reference years are always 2 and 1 years before this.
+          </p>
+        </div>
+      )}
+
       {error && <div className="mt-2 text-sm text-rose-600">{error}</div>}
 
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
         {period.status === 'Draft' && (
-          <Button onClick={open} disabled={busy || !startDate || !endDate}>
+          <Button onClick={open} disabled={busy || !startDate || !endDate || (period.type === 'BLOCK' && period.blockBudgetStartYear === null)}>
             Open
           </Button>
         )}

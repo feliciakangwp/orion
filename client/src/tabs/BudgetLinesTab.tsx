@@ -43,6 +43,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
   const budgetPeriod = budgetPeriods.find((p) => p.type === exerciseTypeForKind(kind));
   const periodStatus = budgetPeriod ? effectiveBudgetPeriodStatus(budgetPeriod, simulationDate) : 'Draft';
   const periodEditable = !!currentUser && canActOnBudgetPeriod(periodStatus, currentUser);
+  const firstPeriodLocked = kind === 'MTP' && !!budgetPeriod && budgetPeriod.status !== 'Draft';
 
   // MTP/Block period keys follow the global Simulation Year (top bar) rather
   // than a per-project setting, so every project is compared on the same FY
@@ -134,6 +135,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
                 costCentres={costCentres}
                 keys={keys}
                 periodEditable={periodEditable}
+                firstPeriodLocked={firstPeriodLocked}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
                 onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}

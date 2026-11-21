@@ -94,3 +94,44 @@ export function annualJustificationSatisfied(
   if (annualVarianceAmount(line) === 0) return true;
   return !!line.justificationForVariance?.trim();
 }
+
+// ---------- Block Budget variance ----------
+// Block Budget's variance compares each FY in its own 5-year window
+// against the one immediately before it, within the SAME periods map
+// (FY29 vs FY28, FY30 vs FY29, ...) — unlike MTP/Annual Budget, which
+// always compare against a separate previousPeriods snapshot. The
+// window's first FY has no prior year at all, so it's never flagged.
+// Everything else is identical to MTP's own variance: the same IT/non-IT
+// Inflation Rate threshold, and only the earliest flagged year needs a
+// justification — reusing the same `justifications` FY-key -> text map.
+
+export function blockYearVariances(periods: Record<string, number>): YearVariance[] {
+  const keys = Object.keys(periods);
+  return keys.slice(1).map((key, i) => ({
+    key,
+    ...varianceForYear(Number(periods[key] ?? 0), Number(periods[keys[i]] ?? 0)),
+  }));
+}
+
+export function blockLineVarianceInfo(
+  line: Pick<BudgetLine, 'periods' | 'itProject'>,
+  rates: InflationRates
+): LineVarianceInfo {
+  const years = blockYearVariances(line.periods);
+  const flaggedKeys = years.filter((y) => exceedsVarianceThreshold(y.percent, line.itProject, rates)).map((y) => y.key);
+  return {
+    years,
+    flaggedKeys,
+    requiredJustificationKey: flaggedKeys[0] ?? null,
+    needsVarianceReview: flaggedKeys.length > 0,
+  };
+}
+
+export function blockJustificationSatisfied(
+  line: Pick<BudgetLine, 'periods' | 'itProject' | 'justifications'>,
+  rates: InflationRates
+): boolean {
+  const { requiredJustificationKey } = blockLineVarianceInfo(line, rates);
+  if (!requiredJustificationKey) return true;
+  return !!line.justifications[requiredJustificationKey]?.trim();
+}

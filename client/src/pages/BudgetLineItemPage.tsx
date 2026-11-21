@@ -40,6 +40,7 @@ export function BudgetLineItemPage() {
   const budgetPeriod = budgetPeriods.find((p) => p.type === 'MTP');
   const periodStatus = budgetPeriod ? effectiveBudgetPeriodStatus(budgetPeriod, simulationDate) : 'Draft';
   const periodEditable = !!currentUser && canActOnBudgetPeriod(periodStatus, currentUser);
+  const firstPeriodLocked = !!budgetPeriod && budgetPeriod.status !== 'Draft';
 
   const projectOf = (id: string | null) => (id ? projects.find((p) => p.id === id) ?? null : null);
 
@@ -141,6 +142,7 @@ export function BudgetLineItemPage() {
                 projectTitleEditable
                 teamProjects={teamProjects}
                 periodEditable={periodEditable}
+                firstPeriodLocked={firstPeriodLocked}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
                 onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}

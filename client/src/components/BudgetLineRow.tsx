@@ -25,6 +25,7 @@ export function BudgetLineRow({
   projectTitleEditable,
   teamProjects,
   periodEditable,
+  firstPeriodLocked,
   onLocalEdit,
   onServerUpdate,
   onRemoved,
@@ -48,6 +49,12 @@ export function BudgetLineRow({
   // but Super Admin. Computed by the parent, since it's the same check for
   // every row of a given kind.
   periodEditable: boolean;
+  // MTP only: once Medium Term Projection has been opened for a cycle, its
+  // window's first FY column is locked for edits (its real figure now
+  // comes from that FY's approved Original Budget — see
+  // flowOriginalBudgetIntoMtp in api.ts). Computed by the parent, since
+  // it's the same check for every row.
+  firstPeriodLocked?: boolean;
   onLocalEdit: (line: BudgetLine) => void;
   onServerUpdate: (line: BudgetLine) => void;
   onRemoved: (id: string) => void;
@@ -306,13 +313,15 @@ export function BudgetLineRow({
       {!isAnnualBudget && <td className="px-2 py-2 text-right text-xs font-semibold text-slate-700">{currency(line.total)}</td>}
       {keys.map((key, i) => {
         const lockedByRecurring = line.recurring === 'Yes' && i > 0;
+        const lockedAsMtpFirstYear = line.kind === 'MTP' && i === 0 && !!firstPeriodLocked;
         return (
           <td key={key} className="px-1 py-2">
             <input
               type="number"
               className={`${cellInput} w-24 text-right`}
               value={line.periods[key] ?? 0}
-              disabled={!editable || lockedByRecurring}
+              disabled={!editable || lockedByRecurring || lockedAsMtpFirstYear}
+              title={lockedAsMtpFirstYear ? 'Locked — this FY now comes from the approved Original Budget' : undefined}
               onChange={(e) => onLocalEdit({ ...line, periods: { ...line.periods, [key]: Number(e.target.value) } })}
               onBlur={(e) => setPeriod(key, Number(e.target.value))}
             />

@@ -208,6 +208,37 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           </NavItem>
         </NavSection>
 
+        <NavSection label="Block Budget">
+          <NavItem to="/block/budget-line-item" onNavigate={onNavigate}>
+            Budget Line Item
+          </NavItem>
+          <NavItem to="/block/variance" onNavigate={onNavigate}>
+            Budget Variance
+          </NavItem>
+          <NavItem to="/block/review-phase" onNavigate={onNavigate}>
+            Review Phase
+          </NavItem>
+          {isFinanceManager && (
+            <>
+              <NavItem to="/block/clarification-fm" onNavigate={onNavigate}>
+                Clarification (FM)
+              </NavItem>
+              <NavItem to="/block/clarification-fo" onNavigate={onNavigate}>
+                Clarification (FO)
+              </NavItem>
+            </>
+          )}
+          <NavItem to="/block/approval-phase" onNavigate={onNavigate}>
+            Approval Phase
+          </NavItem>
+          <NavItem to="/block/fin-supported" onNavigate={onNavigate}>
+            FIN Supported
+          </NavItem>
+          <NavItem to="/block/inactive-users" onNavigate={onNavigate}>
+            Block Budget with Inactive Users
+          </NavItem>
+        </NavSection>
+
         {isFinanceAdmin && (
           <NavSection label="Finance Admin">
             <NavItem to="/finance-admin/funding" onNavigate={onNavigate}>

@@ -9,7 +9,7 @@ import { getDb, nextId, saveDb, type StoredBudgetLine } from './local/db';
 import { applyRecurringInflation, emptyPeriods, fyKey, fyOfDate, periodKeys, roundToNearestHundred, sumPeriods, type InflationRates } from './lib/calc';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind, EXERCISE_LABEL } from './lib/budgetPeriod';
 import { computeMainstreaming } from './lib/mainstreaming';
-import { annualJustificationSatisfied, justificationSatisfied } from './lib/variance';
+import { annualJustificationSatisfied, blockJustificationSatisfied, justificationSatisfied } from './lib/variance';
 import {
   canApprove,
   canCreateProject,
@@ -129,13 +129,28 @@ function owningProjectOf(line: Pick<StoredBudgetLine, 'projectId' | 'assignedToU
   return line.projectId ? getProjectOrThrow(line.projectId) : { openedByUserId: line.assignedToUserId };
 }
 
-// The FY a freshly created Revised/Original Budget line belongs to: the
-// Annual Budget exercise's Start Date, if it's currently active (Open,
-// Closed for Submission, or Closed and Locked) — null while it's still
-// Draft (never opened), same as how an ad hoc MTP line has no FY concept.
-function currentAnnualSubmissionYear(): number | null {
+// The current cycle's Revised Budget FY — the Annual Budget exercise's
+// Start Date's FY, if it's currently active (Open, Closed for Submission,
+// or Closed and Locked) — null while it's still Draft (never opened), same
+// as how an ad hoc MTP line has no FY concept. Original Budget is always
+// exactly one FY ahead of this (see rollAnnualBudgetForward): e.g. opening
+// the cycle in FY26 gives a Revised Budget for FY26 and an Original Budget
+// for FY27.
+function currentRevisedBudgetYear(): number | null {
   const period = getBudgetPeriod('ANNUAL');
   return period.startDate ? fyOfDate(period.startDate) : null;
+}
+function currentOriginalBudgetYear(): number | null {
+  const year = currentRevisedBudgetYear();
+  return year === null ? null : year + 1;
+}
+
+// The Financial Year a freshly (hand-)created RB/OB line belongs to —
+// null for MTP/Block, which have no FY-submission concept.
+function submissionYearFor(kind: BudgetKind): number | null {
+  if (kind === 'RB') return currentRevisedBudgetYear();
+  if (kind === 'OB') return currentOriginalBudgetYear();
+  return null;
 }
 
 // MTP rolls every line forward in place (same id, new periods each cycle),
@@ -146,8 +161,9 @@ function currentAnnualSubmissionYear(): number | null {
 // one. MTP/Block lines (submissionYear always null) pass through
 // unfiltered.
 function belongsToCurrentCycle(line: Pick<StoredBudgetLine, 'kind' | 'submissionYear'>): boolean {
-  if (line.kind !== 'RB' && line.kind !== 'OB') return true;
-  return line.submissionYear === currentAnnualSubmissionYear();
+  if (line.kind === 'RB') return line.submissionYear === currentRevisedBudgetYear();
+  if (line.kind === 'OB') return line.submissionYear === currentOriginalBudgetYear();
+  return true;
 }
 
 // Shared by listAllMtp (kinds=['MTP']) and the Annual Budget Revised/
@@ -226,28 +242,39 @@ function rollMtpLinesForward(newStartYear: number, byUserId: string) {
   }
 }
 
-// Finance Admin opens Annual Budget: builds this cycle's Revised Budget
-// lines as a plain duplicate of last FY's Original Budget lines (Branch
-// Rep edits from there — the duplicate's own total, frozen into
-// previousPeriods, is "Approved Original Budget"; see lib/variance.ts), and
-// separately rebuilds this cycle's Original Budget lines by syncing
-// against the current Medium Term Projection: a last-FY Original Budget
-// line whose parent MTP line now has a zero FY budget (or was removed
+// Finance Admin opens Annual Budget: Revised Budget is always for the
+// *current* FY (the cycle's own Start Date FY — `newCurrentYear` below);
+// Original Budget is always for *next* FY (`newCurrentYear + 1`) — e.g.
+// opening the cycle in FY26 gives a Revised Budget for FY26 and an
+// Original Budget for FY27 ("FY26 Original Budget was done in FY25",
+// i.e. last cycle's Original Budget, which was for FY26, is exactly this
+// cycle's Revised Budget baseline).
+//
+// This builds this cycle's Revised Budget lines as a plain duplicate of
+// last cycle's Original Budget lines (Branch Rep edits from there — the
+// duplicate's own total, frozen into previousPeriods, is "Approved
+// Original Budget"; see lib/variance.ts), and separately rebuilds this
+// cycle's Original Budget lines by syncing against the current Medium
+// Term Projection's FY(current+1) column: a last-cycle Original Budget
+// line whose parent MTP line now has a zero amount there (or was removed
 // entirely) is dropped, and an MTP line with no existing Original Budget
 // counterpart gets a brand-new one, catalog fields pulled down, periods
 // starting at zero ("no comparison" — Branch Rep fills them in from
-// scratch). "Last FY" is matched by `submissionYear`, not "every Original
-// Budget line ever", so this also cleanly handles the first-ever cycle: no
-// matching lines exist yet, so Revised Budget starts empty and Original
-// Budget is built entirely fresh from current MTP lines.
-function rollAnnualBudgetForward(newSubmissionYear: number, byUserId: string) {
+// scratch). Last cycle's lines are matched by `submissionYear ===
+// newCurrentYear` (they were created "for" this exact FY), not "every
+// Original Budget line ever", so this also cleanly handles the
+// first-ever cycle: no matching lines exist yet, so Revised Budget starts
+// empty and Original Budget is built entirely fresh from current MTP
+// lines.
+function rollAnnualBudgetForward(newCurrentYear: number, byUserId: string) {
   const db = getDb();
-  const prevSubmissionYear = newSubmissionYear - 1;
-  const newMtpFyKey = fyKey(newSubmissionYear);
-  const lastFyOriginal = db.budgetLines.filter((l) => l.kind === 'OB' && l.submissionYear === prevSubmissionYear);
+  const newOriginalYear = newCurrentYear + 1;
+  const newMtpFyKey = fyKey(newOriginalYear);
+  const lastCycleOriginal = db.budgetLines.filter((l) => l.kind === 'OB' && l.submissionYear === newCurrentYear);
 
   function freshLine(
     kind: 'RB' | 'OB',
+    submissionYear: number,
     source: Pick<
       StoredBudgetLine,
       | 'projectId'
@@ -289,7 +316,7 @@ function rollAnnualBudgetForward(newSubmissionYear: number, byUserId: string) {
       previousPeriods,
       justifications: {},
       justificationForVariance: '',
-      submissionYear: newSubmissionYear,
+      submissionYear,
       sourceMtpLineId,
       assignedToUserId: source.assignedToUserId,
       reviewer1UserId: null,
@@ -302,39 +329,155 @@ function rollAnnualBudgetForward(newSubmissionYear: number, byUserId: string) {
     };
   }
 
-  // 1. Revised Budget: plain duplicate of last FY's Original Budget lines.
-  for (const ob of lastFyOriginal) {
-    const rb = freshLine('RB', ob, { ...ob.periods }, { ...ob.periods }, ob.sourceMtpLineId);
+  // 1. Revised Budget (FY = newCurrentYear): plain duplicate of last
+  // cycle's Original Budget lines (which were for this exact FY).
+  for (const ob of lastCycleOriginal) {
+    const rb = freshLine('RB', newCurrentYear, ob, { ...ob.periods }, { ...ob.periods }, ob.sourceMtpLineId);
     db.budgetLines.push(rb);
-    pushHistory(rb, byUserId, 'rollover', 'DRAFT', 'DRAFT', `Duplicated from FY${String(prevSubmissionYear % 100).padStart(2, '0')} Original Budget`);
+    pushHistory(rb, byUserId, 'rollover', 'DRAFT', 'DRAFT', `Duplicated from FY${String(newCurrentYear % 100).padStart(2, '0')} Original Budget`);
   }
 
-  // 2. Original Budget: carry forward every last-FY line whose parent MTP
-  // line (if any) still has a nonzero FY budget this cycle.
+  // 2. Original Budget (FY = newOriginalYear = newCurrentYear + 1): carry
+  // forward every one of last cycle's Original Budget lines whose parent
+  // MTP line (if any) still has a nonzero amount for FY(newOriginalYear).
   const mtpLines = db.budgetLines.filter((l) => l.kind === 'MTP');
-  const mirroredMtpIds = new Set(lastFyOriginal.map((l) => l.sourceMtpLineId).filter((x): x is string => !!x));
-  for (const ob of lastFyOriginal) {
+  const mirroredMtpIds = new Set(lastCycleOriginal.map((l) => l.sourceMtpLineId).filter((x): x is string => !!x));
+  for (const ob of lastCycleOriginal) {
     if (ob.sourceMtpLineId) {
       const parent = mtpLines.find((m) => m.id === ob.sourceMtpLineId);
       const parentFyAmount = parent ? Number(parent.periods[newMtpFyKey] ?? 0) : 0;
       if (!parent || parentFyAmount === 0) continue; // zeroed out (or removed) in MTP — drop this line
     }
-    const emptyOb = emptyPeriods('OB', newSubmissionYear);
-    const newOb = freshLine('OB', ob, { ...emptyOb }, { ...emptyOb }, ob.sourceMtpLineId);
+    const emptyOb = emptyPeriods('OB', newOriginalYear);
+    const newOb = freshLine('OB', newOriginalYear, ob, { ...emptyOb }, { ...emptyOb }, ob.sourceMtpLineId);
     db.budgetLines.push(newOb);
     pushHistory(newOb, byUserId, 'rollover', 'DRAFT', 'DRAFT', 'Carried forward from last FY Original Budget');
   }
 
-  // New MTP lines not yet mirrored into Original Budget, with a nonzero FY
-  // budget this cycle: add them fresh, catalog fields pulled down.
+  // New MTP lines not yet mirrored into Original Budget, with a nonzero
+  // amount for FY(newOriginalYear): add them fresh, catalog fields pulled
+  // down.
   for (const mtp of mtpLines) {
     if (mirroredMtpIds.has(mtp.id)) continue;
     const fyAmount = Number(mtp.periods[newMtpFyKey] ?? 0);
     if (fyAmount === 0) continue;
-    const emptyOb = emptyPeriods('OB', newSubmissionYear);
-    const newOb = freshLine('OB', mtp, { ...emptyOb }, { ...emptyOb }, mtp.id);
+    const emptyOb = emptyPeriods('OB', newOriginalYear);
+    const newOb = freshLine('OB', newOriginalYear, mtp, { ...emptyOb }, { ...emptyOb }, mtp.id);
     db.budgetLines.push(newOb);
     pushHistory(newOb, byUserId, 'rollover', 'DRAFT', 'DRAFT', 'Added from Medium Term Projection');
+  }
+}
+
+// Finance Admin closes and locks Annual Budget: every Approved Original
+// Budget line in the just-finished cycle flows its 12-month total back
+// into its linked Medium Term Projection line's matching FY column (the
+// FY it was approved for — e.g. a FY27 Original Budget updates MTP's
+// FY27 figure) — so the next time Medium Term Projection is rolled
+// forward, that FY carries the real, approved Original Budget amount
+// instead of whatever planning figure was there before. A line added by
+// hand with no `sourceMtpLineId`, or whose linked MTP line no longer
+// exists or has already rolled that FY out of its window, is skipped —
+// there's nothing on Medium Term Projection left to update.
+function flowOriginalBudgetIntoMtp(byUserId: string) {
+  const db = getDb();
+  const originalYear = currentOriginalBudgetYear();
+  if (originalYear === null) return;
+  const targetFyKey = fyKey(originalYear);
+  const approvedOriginal = db.budgetLines.filter(
+    (l) => l.kind === 'OB' && l.submissionYear === originalYear && l.step === 'APPROVED' && l.sourceMtpLineId
+  );
+  for (const ob of approvedOriginal) {
+    const mtp = db.budgetLines.find((l) => l.id === ob.sourceMtpLineId && l.kind === 'MTP');
+    if (!mtp || !(targetFyKey in mtp.periods)) continue;
+    const total = sumPeriods(ob.periods);
+    if (mtp.periods[targetFyKey] === total) continue;
+    mtp.periods[targetFyKey] = total;
+    mtp.updatedAt = now();
+    pushHistory(mtp, byUserId, 'sync', mtp.step, mtp.step, `${targetFyKey} updated to ${total} from the approved Original Budget`);
+  }
+}
+
+// Finance Admin opens Block Budget: every current Medium Term Projection
+// line is mirrored into a Block Budget line covering the 5 FYs starting
+// at `blockStartYear` (e.g. 2028 -> FY28-FY32), with its catalog fields
+// and those 5 years' actual figures pulled straight from MTP — unlike
+// Original Budget, there's no "remove if zero" rule here, every MTP line
+// gets (or keeps) a Block Budget counterpart. A Block Budget line already
+// linked to a given MTP line (via `sourceMtpLineId`) is rolled forward IN
+// PLACE — same record, periods reset to the new window, step back to
+// Branch Rep Draft — exactly like MTP's own rollover, rather than
+// accumulating a fresh record every cycle the way Annual Budget's RB/OB
+// do (Block Budget has no FY-submission concept to tell cycles apart by).
+// An MTP line with no existing Block Budget counterpart yet gets a
+// brand-new one.
+function rollBlockBudgetForward(blockStartYear: number, byUserId: string) {
+  const db = getDb();
+  const windowKeys = periodKeys('BLOCK', blockStartYear);
+  const mtpLines = db.budgetLines.filter((l) => l.kind === 'MTP');
+  const existingBlockByMtpId = new Map<string, StoredBudgetLine>();
+  for (const l of db.budgetLines) {
+    if (l.kind === 'BLOCK' && l.sourceMtpLineId) existingBlockByMtpId.set(l.sourceMtpLineId, l);
+  }
+  for (const mtp of mtpLines) {
+    const newPeriods: Record<string, number> = {};
+    for (const key of windowKeys) newPeriods[key] = Number(mtp.periods[key] ?? 0);
+    const existing = existingBlockByMtpId.get(mtp.id);
+    if (existing) {
+      existing.projectId = mtp.projectId;
+      existing.description = mtp.description;
+      existing.opsOrDev = mtp.opsOrDev;
+      existing.account = mtp.account;
+      existing.subAcct = mtp.subAcct;
+      existing.fundingEntryId = mtp.fundingEntryId;
+      existing.recurring = mtp.recurring;
+      existing.costCentre = mtp.costCentre;
+      existing.itProject = mtp.itProject;
+      existing.ictExp = mtp.ictExp;
+      existing.buildOrBuy = mtp.buildOrBuy;
+      existing.basis = mtp.basis;
+      existing.periods = newPeriods;
+      existing.previousPeriods = { ...newPeriods };
+      existing.justifications = {};
+      const from = existing.step;
+      existing.step = 'DRAFT';
+      existing.updatedAt = now();
+      pushHistory(existing, byUserId, 'rollover', from, 'DRAFT', `Rolled forward to the ${windowKeys[0]}-${windowKeys[windowKeys.length - 1]} Block Budget window`);
+    } else {
+      const line: StoredBudgetLine = {
+        id: nextId('line'),
+        projectId: mtp.projectId,
+        kind: 'BLOCK',
+        step: 'DRAFT',
+        description: mtp.description,
+        opsOrDev: mtp.opsOrDev,
+        account: mtp.account,
+        subAcct: mtp.subAcct,
+        fundingEntryId: mtp.fundingEntryId,
+        recurring: mtp.recurring,
+        costCentre: mtp.costCentre,
+        itProject: mtp.itProject,
+        ictExp: mtp.ictExp,
+        buildOrBuy: mtp.buildOrBuy,
+        basis: mtp.basis,
+        budgetType: null,
+        periods: newPeriods,
+        previousPeriods: { ...newPeriods },
+        justifications: {},
+        justificationForVariance: '',
+        submissionYear: null,
+        sourceMtpLineId: mtp.id,
+        assignedToUserId: mtp.assignedToUserId,
+        reviewer1UserId: null,
+        reviewer2UserId: null,
+        approverUserId: null,
+        financeOfficerUserId: null,
+        history: [],
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      db.budgetLines.push(line);
+      pushHistory(line, byUserId, 'rollover', 'DRAFT', 'DRAFT', 'Added from Medium Term Projection');
+    }
   }
 }
 
@@ -786,6 +929,34 @@ export const api = {
     // Generic version of listAllMtp for Annual Budget's Revised/Original
     // Budget Line Item pages, which span two kinds (RB and OB) at once.
     listByKinds: (kinds: BudgetKind[]) => run(() => listByKindsImpl(kinds)),
+    // Block Budget Line Item: every BLOCK-kind line the acting user can
+    // see, each with its Revised/Original Budget reference totals
+    // (read-only context columns — see BlockBudgetLineWithReferences)
+    // looked up via the shared `sourceMtpLineId` and the Block Budget
+    // Start Year's -2/-1 reference FYs.
+    listBlockBudget: () =>
+      run(() => {
+        const lines = listByKindsImpl(['BLOCK']);
+        const db = getDb();
+        const blockPeriod = getBudgetPeriod('BLOCK');
+        const revisedYear = blockPeriod.blockBudgetStartYear !== null ? blockPeriod.blockBudgetStartYear - 2 : null;
+        const originalYear = blockPeriod.blockBudgetStartYear !== null ? blockPeriod.blockBudgetStartYear - 1 : null;
+        return lines.map((line) => {
+          const revised =
+            revisedYear !== null && line.sourceMtpLineId
+              ? db.budgetLines.find((l) => l.kind === 'RB' && l.sourceMtpLineId === line.sourceMtpLineId && l.submissionYear === revisedYear)
+              : undefined;
+          const original =
+            originalYear !== null && line.sourceMtpLineId
+              ? db.budgetLines.find((l) => l.kind === 'OB' && l.sourceMtpLineId === line.sourceMtpLineId && l.submissionYear === originalYear)
+              : undefined;
+          return {
+            ...line,
+            revisedBudgetTotal: revised ? sumPeriods(revised.periods) : null,
+            originalBudgetTotal: original ? sumPeriods(original.periods) : null,
+          };
+        });
+      }),
     // Action-queue view for Review Phase / Approval Phase: every line of
     // these kinds the acting user can act on *right now*, regardless of
     // tagging or team membership — needed because a CIO-group user (a
@@ -829,7 +1000,7 @@ export const api = {
           previousPeriods: emptyPeriods(kind, simulationYear),
           justifications: {},
           justificationForVariance: '',
-          submissionYear: kind === 'RB' || kind === 'OB' ? currentAnnualSubmissionYear() : null,
+          submissionYear: submissionYearFor(kind),
           sourceMtpLineId: null,
           assignedToUserId: user.id,
           reviewer1UserId: null,
@@ -890,7 +1061,7 @@ export const api = {
           previousPeriods: emptyPeriods(kind, simulationYear),
           justifications: {},
           justificationForVariance: '',
-          submissionYear: kind === 'RB' || kind === 'OB' ? currentAnnualSubmissionYear() : null,
+          submissionYear: submissionYearFor(kind),
           sourceMtpLineId: null,
           assignedToUserId,
           reviewer1UserId: null,
@@ -981,6 +1152,18 @@ export const api = {
 
         const rates = getInflationRates();
         const keys = periodKeys(line.kind, simulationYear);
+
+        // Once Medium Term Projection has been opened for a cycle, the
+        // window's first FY column is locked for edits — its real figure
+        // comes from that FY's Original Budget once Annual Budget
+        // approves and locks it in (see flowOriginalBudgetIntoMtp), not
+        // from direct editing here. Snapshot it before any of the
+        // branches below touch `line.periods`, then clamp it back
+        // afterward regardless of which branch ran.
+        const mtpFirstKeyLocked = line.kind === 'MTP' && getBudgetPeriod('MTP').status !== 'Draft';
+        const lockedFirstKey = mtpFirstKeyLocked ? Object.keys(line.periods)[0] : null;
+        const lockedFirstKeyValue = lockedFirstKey !== null ? line.periods[lockedFirstKey] : undefined;
+
         if ('periods' in data) {
           const incoming = data.periods as Record<string, number>;
           if (line.recurring === 'Yes') {
@@ -994,6 +1177,10 @@ export const api = {
             const baseAmount = Number(line.periods[keys[0]] ?? 0);
             line.periods = applyRecurringInflation(line.kind, simulationYear, line.recurring, line.itProject, baseAmount, rates);
           }
+        }
+
+        if (lockedFirstKey !== null) {
+          line.periods[lockedFirstKey] = lockedFirstKeyValue!;
         }
 
         line.updatedAt = now();
@@ -1034,6 +1221,9 @@ export const api = {
         }
         if (line.kind === 'RB' && !annualJustificationSatisfied(line)) {
           throw new Error('This line has a variance requiring a Justification for Variance before it can be submitted');
+        }
+        if (line.kind === 'BLOCK' && !blockJustificationSatisfied(line, getInflationRates())) {
+          throw new Error('This line has a variance requiring a Block Budget Variance justification before it can be submitted');
         }
         const from = line.step;
         line.step = nextOnSubmit(line.step);
@@ -1127,9 +1317,13 @@ export const api = {
         if (period.status !== 'Draft') throw new Error(`${EXERCISE_LABEL[type]} is already active`);
         const other = db.budgetPeriods.find((p) => p.type !== type && p.status !== 'Draft');
         if (other) throw new Error(`${EXERCISE_LABEL[other.type]} is currently ${other.status === 'Locked' ? 'Closed and Locked' : 'Open'} — only one budget exercise can be open at a time`);
+        if (type === 'BLOCK' && period.blockBudgetStartYear === null) {
+          throw new Error('Set a Block Budget Start Year before opening Block Budget');
+        }
 
         if (type === 'MTP') rollMtpLinesForward(fyOfDate(startDate), user.id);
         if (type === 'ANNUAL') rollAnnualBudgetForward(fyOfDate(startDate), user.id);
+        if (type === 'BLOCK') rollBlockBudgetForward(period.blockBudgetStartYear!, user.id);
 
         period.status = 'Open';
         period.startDate = startDate;
@@ -1159,6 +1353,7 @@ export const api = {
         if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can close and lock a budget period');
         const period = getBudgetPeriod(type);
         if (period.status === 'Draft') throw new Error('This budget period has not been opened yet');
+        if (type === 'ANNUAL') flowOriginalBudgetIntoMtp(user.id);
         period.status = 'Locked';
         period.updatedAt = now();
         saveDb();
@@ -1192,6 +1387,21 @@ export const api = {
         period.status = 'Draft';
         period.startDate = null;
         period.endDate = null;
+        if (type === 'BLOCK') period.blockBudgetStartYear = null;
+        period.updatedAt = now();
+        saveDb();
+        return period;
+      }),
+    // BLOCK only: the calendar year whose FY starts Block Budget's 5-FY
+    // window — editable only while still Draft, same as Start Date.
+    setBlockBudgetStartYear: (year: number) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can set the Block Budget Start Year');
+        const period = getBudgetPeriod('BLOCK');
+        if (period.status !== 'Draft') throw new Error('Block Budget Start Year can only be set while Draft');
+        if (!Number.isFinite(year)) throw new Error('Block Budget Start Year must be a year');
+        period.blockBudgetStartYear = year;
         period.updatedAt = now();
         saveDb();
         return period;

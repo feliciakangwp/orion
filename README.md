@@ -189,7 +189,16 @@ so a path-based router would 404 on refresh of a deep link.)
     otherwise; a non-recurring line's new year starts at 0), and every
     line's workflow step resets to Branch Rep Draft so it can be worked
     again for the new cycle. The global **Simulation Year** control follows
-    along to the new window automatically.
+    along to the new window automatically. The window's **first FY column
+    is locked for edits** the moment the period isn't Draft (e.g. FY26 is
+    locked for the whole FY26–40 window) — that FY's real figure comes
+    from Annual Budget instead, the moment its Original Budget is
+    approved and the cycle is Closed and Locked (see "Annual Budget"
+    below); a brand-new line added after Medium Term Projection has
+    already opened starts that FY at 0, same as any other blank period,
+    and it stays locked there until Annual Budget flows a figure in.
+  - Also adds a **Block Budget Start Year** field (for the Block Budget
+    exercise only) — see "Block Budget" below.
   - While **Open**, Branch Rep/DY Head/Head/SMGT/Finance Officer/Finance
     Manager can all edit/submit/approve lines of that exercise's kind(s) as
     normal. Once **Closed for Submission**, only Finance Officer/Finance
@@ -296,32 +305,38 @@ so a path-based router would 404 on refresh of a deep link.)
   Apr–Mar monthly columns; a Justification for Variance field lives only in
   Budget Variances, never inline on these tables, mirroring how MTP's own
   per-year justifications live only in MTP Variance.
-  - **Opening Annual Budget** (Finance Admin → Budget Period) runs a
-    rollover: every **Original Budget** line from last FY's cycle (matched
-    by **Submission Year**, not "every OB line ever") is plainly duplicated
-    into this cycle's **Revised Budget** — the duplicate's own total,
-    frozen as its `previousPeriods`, becomes **Approved Original Budget**;
-    its live total (as the Branch Rep edits it) is **Total Budget
-    Requested**; their difference is the system-computed **Total
-    Variance**, which needs a **Justification for Variance** the moment
-    it's nonzero (no percentage threshold, unlike MTP Variance).
-  - Separately, this cycle's **Original Budget** lines are rebuilt by
-    syncing against the current **Medium Term Projection**: a last-FY
-    Original Budget line whose parent MTP line's FY budget for the new
-    cycle is now zero (or whose parent MTP line was removed entirely) is
-    dropped; an MTP line with no existing Original Budget counterpart (new,
-    or never synced before) gets added fresh, with Description, Project
-    Title, Operating/Development, Account, Sub Account, Source of Funding,
-    Recurring, Cost Centre, Is it IT Project?, ICT Expenditure Category,
-    Build vs Buy and Basis of Projection pulled down from it — its own 12
-    monthly periods start at zero ("no comparison"), so Approved Original
-    Budget/Total Variance/Justification for Variance are all blank for an
-    Original Budget line; Total Budget Requested is just the sum of its 12
-    periods.
+  - **Revised Budget is always for the *current* FY; Original Budget is
+    always for *next* FY** — e.g. opening the cycle in FY26 gives a
+    Revised Budget for FY26 and an Original Budget for FY27 ("FY26's
+    Original Budget was done in FY25"). **Opening Annual Budget** (Finance
+    Admin → Budget Period) runs a rollover: last cycle's **Original
+    Budget** line (which was, by the same rule, created *for this exact
+    FY*) is plainly duplicated into this cycle's **Revised Budget** — the
+    duplicate's own total, frozen as its `previousPeriods`, becomes
+    **Approved Original Budget**; its live total (as the Branch Rep edits
+    it) is **Total Budget Requested**; their difference is the
+    system-computed **Total Variance**, which needs a **Justification for
+    Variance** the moment it's nonzero (no percentage threshold, unlike
+    MTP Variance). Matching is by **Submission Year**, not "every OB line
+    ever", so a line from two cycles back is never mistaken for last
+    cycle's.
+  - Separately, this cycle's **Original Budget** (for *next* FY) lines are
+    rebuilt by syncing against the current **Medium Term Projection**'s
+    figure for that same FY: a last-cycle Original Budget line whose
+    parent MTP line's amount there is now zero (or whose parent MTP line
+    was removed entirely) is dropped; an MTP line with no existing
+    Original Budget counterpart (new, or never synced before) gets added
+    fresh, with Description, Project Title, Operating/Development,
+    Account, Sub Account, Source of Funding, Recurring, Cost Centre, Is it
+    IT Project?, ICT Expenditure Category, Build vs Buy and Basis of
+    Projection pulled down from it — its own 12 monthly periods start at
+    zero ("no comparison"), so Approved Original Budget/Total
+    Variance/Justification for Variance are all blank for an Original
+    Budget line; Total Budget Requested is just the sum of its 12 periods.
   - The very first Annual Budget cycle is a pure bootstrap case: no prior
-    Original Budget lines exist yet, so Revised Budget starts empty and
-    Original Budget is built entirely fresh from whatever's currently in
-    Medium Term Projection.
+    Original Budget line exists yet for the new cycle's Revised Budget FY,
+    so Revised Budget starts empty and Original Budget is built entirely
+    fresh from whatever's currently in Medium Term Projection.
   - Status follows the same Draft/Review/Clarification/Pending
     Approval/Approved workflow as every other kind; a freshly rolled RB/OB
     line always starts back at Branch Rep Draft for the new cycle, same as
@@ -333,6 +348,57 @@ so a path-based router would 404 on refresh of a deep link.)
     per cycle, so past cycles' lines are filtered out of the active view
     (though they remain in Fin Supported, same as MTP's own accumulated
     history).
+  - **Closing and Locking Annual Budget flows Original Budget back into
+    Medium Term Projection**: every Approved Original Budget line's
+    12-month total overwrites its linked MTP line's matching FY column
+    (e.g. a FY27 Original Budget updates MTP's FY27 figure) — so the next
+    time Medium Term Projection is rolled forward, that FY shows the real,
+    approved Original Budget amount rather than whatever planning figure
+    was there before. A line added by hand with no MTP link, or one whose
+    linked MTP line's FY has already rolled out of its window, is left
+    alone.
+- **Block Budget** (sidebar header) covers the BLOCK kind on its own,
+  pulled down from Medium Term Projection the same way Annual Budget's
+  Original Budget is: **Budget Line Item**, **Budget Variance**, and the
+  same action-queue/cleanup tabs as the other two exercises (Review Phase,
+  Clarification (FM), Clarification (FO), Approval Phase, FIN Supported,
+  Block Budget with Inactive Users).
+  - Finance Admin sets a **Block Budget Start Year** (Budget Period) —
+    the calendar year whose FY starts Block Budget's 5-FY window (e.g.
+    2028 means FY28–FY32); it's independent of the exercise's own Start
+    Date and must be set before Block Budget can be opened. Revised/
+    Original Budget's reference years for a Block Budget line are always
+    2 and 1 years before it (e.g. FY26/FY27 for a 2028 Start Year).
+  - **Opening Block Budget** mirrors every current Medium Term Projection
+    line into a Block Budget line covering those 5 FYs, with its catalog
+    fields (Description, Project Title, Operating/Development, Account,
+    Sub Account, Source of Funding, Recurring, Cost Centre, Is it IT
+    Project?, ICT Expenditure Category, Build vs Buy, Basis of Projection)
+    **and** those 5 years' actual MTP figures copied straight across —
+    unlike Original Budget, there's no "remove if zero" rule, every MTP
+    line gets (or keeps) a Block Budget line. A Block Budget line already
+    linked to a given MTP line rolls forward **in place** (periods reset
+    to the new window, step back to Branch Rep Draft) exactly like MTP's
+    own rollover, rather than accumulating a fresh record every cycle the
+    way Annual Budget's RB/OB do — Block Budget has no FY-submission
+    concept to tell cycles apart by.
+  - Budget Line Item's table is Status, Description, Project Title,
+    Operating/Development, Account, Sub Account, Source of Funding,
+    Recurring, Cost Centre, Is it IT Project?, ICT Expenditure Category,
+    Build vs Buy, Basis of Projection, then two **read-only reference
+    columns** — the matching Revised Budget total and Original Budget
+    total for that same line (looked up by shared MTP linkage, not stored
+    on the line) — then **Total Budget Requested** (the sum of just the 5
+    Block FYs, never including the two reference columns), then the 5
+    Block FY columns themselves.
+  - **Budget Variance** compares each of the 5 Block FYs against the one
+    immediately before it, **within the line's own window** (FY29 vs
+    FY28, FY30 vs FY29, …) rather than against a separate prior-cycle
+    snapshot — the window's first FY has nothing to compare against, so
+    it's never flagged. Otherwise identical to MTP Variance: the same
+    IT/non-IT Inflation Rate threshold, only the earliest flagged year
+    needs a justification, and a line can't be submitted while it's
+    missing.
 - **Mainstreaming** — once a project's MTP budget period is **Closed for
   Submission** (or Closed and Locked), each of its Approved lines' Fin
   Supported duplicate is checked against that project's **External**,
@@ -532,3 +598,47 @@ so a path-based router would 404 on refresh of a deep link.)
   Original Budget is always blank for it), so it can never appear there,
   even though the spec's "pull down all the Annual Budget lines that
   require variance" could be read as covering both kinds.
+- Medium Term Projection's new first-FY-column lock is enforced
+  unconditionally for every MTP line, old or brand-new, the moment the
+  period isn't Draft — a line created *after* Medium Term Projection has
+  already opened for a cycle starts that FY at 0 and it stays locked
+  there (rather than, say, exempting new lines) until Annual Budget flows
+  a real figure in; this reads the spec's own example ("FY26 will be
+  locked for edit") as an unconditional rule about the column, not about
+  which lines already existed when the period opened. The lock is
+  enforced both client-side (the input is disabled) and server-side
+  (`budgetLines.update` silently clamps any attempted change back),
+  the latter being defense-in-depth that isn't reachable through the UI
+  itself to exercise in testing.
+- The Original-Budget-approved-total flow-back (on closing and locking
+  Annual Budget) only ever touches a line's **own** linked MTP line, and
+  only once — overwriting the exact FY it was approved for. If that FY
+  has already rolled out of the MTP line's current window (e.g. Medium
+  Term Projection has moved on several cycles since), the flow-back is
+  silently skipped for that line rather than erroring, since there's
+  nothing left on Medium Term Projection to update.
+- Block Budget rolls forward **in place** (same record reused every
+  cycle, exactly like Medium Term Projection's own rollover) rather than
+  accumulating a fresh record every cycle the way Annual Budget's RB/OB
+  do. This was a deliberate departure from the Annual Budget precedent:
+  Block Budget has no FY-submission field to tell cycles apart by (its
+  spec, unlike Original Budget's, gives no "remove if zero"/"add if new"
+  rule to build that distinction from), so a fresh-record-per-cycle
+  design would mean the same MTP line's Block Budget line duplicating
+  forever across cycles with no way to tell which is current short of
+  adding a submission-year concept the spec never asked for.
+- A Block Budget line's Revised Budget/Original Budget reference columns
+  (labelled by whichever FYs the Block Budget Start Year implies, e.g.
+  FY26/FY27 for a 2028 Start Year) are computed live by looking up other
+  lines sharing the same linked MTP line and the expected Submission
+  Year — never stored on the Block Budget line itself — so they always
+  reflect whatever Annual Budget has actually recorded for those FYs, and
+  read as blank (not zero) if no such Annual Budget cycle has run yet.
+- Block Budget's own cross-project Budget Line Item/Budget Variance pages
+  get the full bespoke column layout from the spec (including the two
+  reference columns and the mid-table Total Budget Requested position);
+  the pre-existing per-project Block Budget tab (inside a Project
+  Profile's own tabs, predating this round) keeps its original generic
+  layout rather than being retrofitted with the same cross-record lookups
+  — the spec's detailed column list was given specifically for the new
+  header's own "Budget Line Item" tab.

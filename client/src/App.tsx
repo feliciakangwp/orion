@@ -4,6 +4,8 @@ import { Layout } from './components/Layout';
 import { AnnualBudgetVariancePage } from './pages/AnnualBudgetVariancePage';
 import { OriginalBudgetLineItemPage, RevisedBudgetLineItemPage } from './pages/AnnualBudgetLineItemPage';
 import { ApprovalPhasePage } from './pages/ApprovalPhasePage';
+import { BlockBudgetLineItemPage } from './pages/BlockBudgetLineItemPage';
+import { BlockBudgetVariancePage } from './pages/BlockBudgetVariancePage';
 import { BudgetLineItemPage } from './pages/BudgetLineItemPage';
 import { ClarificationFMPage } from './pages/ClarificationFMPage';
 import { ClarificationFOPage } from './pages/ClarificationFOPage';
@@ -50,6 +52,14 @@ export default function App() {
         <Route path="/annual/approval-phase" element={<ApprovalPhasePage kinds={['RB', 'OB']} title="Approval Phase" description="Annual Budget lines currently awaiting your approval (Reviewer 2, CIO, or Approver). A line appears here only once it's actually routed to you." />} />
         <Route path="/annual/fin-supported" element={<FinSupportedPage kinds={['RB', 'OB']} title="FIN Supported" emptyMessage="No Annual Budget lines have reached Approved yet." />} />
         <Route path="/annual/inactive-users" element={<MtpInactiveUsersPage kinds={['RB', 'OB']} title="Annual Budget with Inactive User" description="Annual Budget lines tagged to a user who is now Inactive in User Management — reassign these before they can move forward." emptyMessage="No Annual Budget lines are tagged to an Inactive user." />} />
+        <Route path="/block/budget-line-item" element={<BlockBudgetLineItemPage />} />
+        <Route path="/block/variance" element={<BlockBudgetVariancePage />} />
+        <Route path="/block/review-phase" element={<ReviewPhasePage kinds={['BLOCK']} title="Review Phase" description="Block Budget lines currently awaiting your action at Review or Clarification. A line appears here only once it's actually routed to you." />} />
+        <Route path="/block/clarification-fm" element={<ClarificationFMPage kinds={['BLOCK']} title="Clarification (FM)" description="Block Budget lines now routed to you for clarification." emptyMessage="No Block Budget lines are currently routed to you." />} />
+        <Route path="/block/clarification-fo" element={<ClarificationFOPage kinds={['BLOCK']} title="Clarification (FO)" description="Block Budget lines still with Finance Officer in the clarification stage — not yet your turn." emptyMessage="No Block Budget lines are currently with Finance Officer." />} />
+        <Route path="/block/approval-phase" element={<ApprovalPhasePage kinds={['BLOCK']} title="Approval Phase" description="Block Budget lines currently awaiting your approval (Reviewer 2, CIO, or Approver). A line appears here only once it's actually routed to you." />} />
+        <Route path="/block/fin-supported" element={<FinSupportedPage kinds={['BLOCK']} title="FIN Supported" emptyMessage="No Block Budget lines have reached Approved yet." />} />
+        <Route path="/block/inactive-users" element={<MtpInactiveUsersPage kinds={['BLOCK']} title="Block Budget with Inactive Users" description="Block Budget lines tagged to a user who is now Inactive in User Management — reassign these before they can move forward." emptyMessage="No Block Budget lines are tagged to an Inactive user." />} />
         <Route path="/finance-admin/funding" element={<FinanceAdminFundingPage />} />
         <Route path="/finance-admin/account" element={<FinanceAdminAccountPage />} />
         <Route path="/finance-admin/cost-centre" element={<FinanceAdminCostCentrePage />} />

@@ -38,12 +38,10 @@ export interface DbShape {
   seq: number;
 }
 
-// Bumped again from orion.db.v6: BudgetLine gained three new required
-// fields (justificationForVariance, submissionYear, sourceMtpLineId) for
-// Annual Budget (Revised/Original Budget Line Item) — this is a clean
-// slate with a different shape, so old data is simply left behind under
-// its old key rather than migrated.
-const STORAGE_KEY = 'orion.db.v7';
+// Bumped again from orion.db.v7: BudgetPeriod gained blockBudgetStartYear
+// for Block Budget — this is a clean slate with a different shape, so old
+// data is simply left behind under its old key rather than migrated.
+const STORAGE_KEY = 'orion.db.v8';
 
 function buildSeedUsers(): User[] {
   const now = new Date().toISOString();
@@ -195,6 +193,7 @@ function buildSeedBudgetPeriods(): BudgetPeriod[] {
     status: 'Draft',
     startDate: null,
     endDate: null,
+    blockBudgetStartYear: null,
     updatedAt: now,
   }));
 }

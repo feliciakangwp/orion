@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { StatusBadge } from '../components/ui';
+import { AorTab } from '../tabs/AorTab';
 import { BudgetLinesTab } from '../tabs/BudgetLinesTab';
 import { DetailsTab } from '../tabs/DetailsTab';
 import { SourceOfFundingTab } from '../tabs/SourceOfFundingTab';
@@ -11,6 +12,7 @@ import type { Project } from '../types';
 const TABS = [
   { key: 'Details', label: 'Details' },
   { key: 'Source of Funding', label: 'Source of Funding' },
+  { key: 'AOR', label: 'AOR' },
   { key: 'MTP', label: 'MTP' },
   { key: 'RB', label: 'Revised Budget' },
   { key: 'OB', label: 'Original Budget' },
@@ -61,6 +63,7 @@ export function ProjectDetailPage() {
 
       {tab === 'Details' && <DetailsTab project={project} onChange={reload} />}
       {tab === 'Source of Funding' && <SourceOfFundingTab project={project} />}
+      {tab === 'AOR' && <AorTab project={project} />}
       {tab === 'MTP' && <BudgetLinesTab project={project} kind="MTP" />}
       {tab === 'RB' && <BudgetLinesTab project={project} kind="RB" />}
       {tab === 'OB' && <BudgetLinesTab project={project} kind="OB" />}

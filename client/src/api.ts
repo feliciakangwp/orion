@@ -17,6 +17,7 @@ import {
   canManageFinanceAdminCatalog,
   canReject,
   canSeeLine,
+  canSeeProject,
   canSubmit,
   isEditableByBranchRep,
   isFinance,
@@ -33,6 +34,7 @@ import {
 import type {
   AccountCode,
   AccountLevel,
+  Aor,
   BudgetExerciseType,
   BudgetKind,
   BudgetLine,
@@ -167,6 +169,19 @@ function belongsToCurrentCycle(line: Pick<StoredBudgetLine, 'kind' | 'submission
   if (line.kind === 'RB') return line.submissionYear === currentRevisedBudgetYear();
   if (line.kind === 'OB') return line.submissionYear === currentOriginalBudgetYear();
   return true;
+}
+
+// projectId -> every userId who's a team member of it — shared by every
+// visibility check (budget lines, Project Profile listing, Project AOR
+// listing) that needs to know "is this user a team member of project X".
+function teamMembersByProject(): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const m of getDb().teamMembers) {
+    const arr = map.get(m.projectId) ?? [];
+    arr.push(m.userId);
+    map.set(m.projectId, arr);
+  }
+  return map;
 }
 
 // Shared by listAllMtp (kinds=['MTP']) and the Annual Budget Revised/
@@ -778,7 +793,15 @@ export const api = {
   },
 
   projects: {
-    list: () => run(() => getDb().projects),
+    // Branch Rep (and every other non-Finance group) only sees a project
+    // they opened or are a team member of; Finance (Officer, Manager, or
+    // Admin) sees every project, same visibility rule as a budget line.
+    list: () =>
+      run(() => {
+        const user = requireUser();
+        const teamMembers = teamMembersByProject();
+        return getDb().projects.filter((p) => canSeeProject(p, user, teamMembers.get(p.id) ?? []));
+      }),
     get: (id: string) => run(() => getProjectOrThrow(id)),
     create: (data: { title: string; justification: string; additionalComments?: string }) =>
       run(() => {
@@ -989,6 +1012,21 @@ export const api = {
         return db.budgetLines
           .filter((l) => l.projectId === projectId && l.kind === kind)
           .filter((l) => canSeeLine(l, user, teamMemberUserIds))
+          .map(withComputed);
+      }),
+    // Every line of a kind for one project, regardless of per-line
+    // tagging — used for project-level financial aggregates (the AOR
+    // ledger) rather than a personal work queue, so it's gated only by
+    // whether the acting user can see the project at all (same rule as
+    // Project Profile), not by whether they're tagged on each line.
+    listAllForProject: (projectId: string, kind: BudgetKind) =>
+      run(() => {
+        const user = requireUser();
+        const project = getProjectOrThrow(projectId);
+        const teamMembers = teamMembersByProject();
+        if (!canSeeProject(project, user, teamMembers.get(projectId) ?? [])) return [];
+        return getDb()
+          .budgetLines.filter((l) => l.projectId === projectId && l.kind === kind)
           .map(withComputed);
       }),
     // Cross-project view for Medium Term Projection > Budget Line Item: every
@@ -1258,6 +1296,42 @@ export const api = {
         saveDb();
         return withComputed(line);
       }),
+    // Reassign the Branch Rep (ad hoc lines only — a project-attached
+    // line's Branch Rep always follows the Project Profile's own opener,
+    // so reassigning it here would have no effect), Reviewer 1, Reviewer
+    // 2, or Approver on a line — available to anyone who can currently
+    // see it (tagged on it, a team member, or Finance), not just its
+    // current Branch Rep, and regardless of workflow step. Whoever is
+    // reassigned away from naturally stops seeing the line afterward
+    // (see canSeeLine) — that's just a consequence of the field change,
+    // not a separate step.
+    reassign: (
+      id: string,
+      data: Partial<Pick<BudgetLine, 'assignedToUserId' | 'reviewer1UserId' | 'reviewer2UserId' | 'approverUserId'>>
+    ) =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        const line = db.budgetLines.find((l) => l.id === id);
+        if (!line) throw new Error('Not found');
+        const teamMemberUserIds = line.projectId ? db.teamMembers.filter((m) => m.projectId === line.projectId).map((m) => m.userId) : [];
+        if (!canSeeLine(line, user, teamMemberUserIds)) throw new Error('You do not have access to this line');
+        if ('assignedToUserId' in data && data.assignedToUserId && line.projectId === null) {
+          if (!db.users.some((u) => u.id === data.assignedToUserId)) throw new Error('Unknown user');
+          line.assignedToUserId = data.assignedToUserId;
+        }
+        if ('reviewer1UserId' in data) line.reviewer1UserId = data.reviewer1UserId ?? null;
+        if ('reviewer2UserId' in data) {
+          if (data.reviewer2UserId && data.reviewer2UserId === line.reviewer1UserId) {
+            throw new Error('Reviewer 2 must be a different person from Reviewer 1');
+          }
+          line.reviewer2UserId = data.reviewer2UserId ?? null;
+        }
+        if ('approverUserId' in data) line.approverUserId = data.approverUserId ?? null;
+        line.updatedAt = now();
+        saveDb();
+        return withComputed(line);
+      }),
     remove: (id: string) =>
       run(() => {
         const user = requireUser();
@@ -1490,8 +1564,10 @@ export const api = {
         const user = requireUser();
         const db = getDb();
         const project = getProjectOrThrow(projectId);
-        if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can add team members');
         const existing = new Set(db.teamMembers.filter((m) => m.projectId === project.id).map((m) => m.userId));
+        if (!isOwningBranchRep(user, project) && !existing.has(user.id)) {
+          throw new Error('Only the owning Branch Rep or a current team member can add team members');
+        }
         const added: TeamMember[] = [];
         for (const userId of userIds) {
           if (existing.has(userId)) continue;
@@ -1514,6 +1590,123 @@ export const api = {
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can remove team members');
         db.teamMembers = db.teamMembers.filter((m) => m.id !== id);
         saveDb();
+      }),
+  },
+
+  // A Project Profile's AOR(s) — Branch Rep (owning, or a team member)
+  // keys the details in; Finance Officer/Finance Manager ticks "Finance
+  // Confirmed", which locks every field for everyone from then on. More
+  // than one AOR can exist per project (e.g. a later top-up); see
+  // lib/aor.ts for how its Year/Status and balance are derived.
+  aors: {
+    list: (projectId: string) =>
+      run(() => {
+        const user = requireUser();
+        const project = getProjectOrThrow(projectId);
+        const teamMembers = teamMembersByProject();
+        if (!canSeeProject(project, user, teamMembers.get(project.id) ?? [])) return [];
+        return getDb().aors.filter((a) => a.projectId === projectId);
+      }),
+    // Cross-project Project AOR listing: every *confirmed* AOR the acting
+    // user can see (same project-visibility rule as Project Profile) —
+    // an unconfirmed one isn't "in the Project AOR" yet, per spec.
+    listAllConfirmed: () =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        const teamMembers = teamMembersByProject();
+        const visibleProjectIds = new Set(
+          db.projects.filter((p) => canSeeProject(p, user, teamMembers.get(p.id) ?? [])).map((p) => p.id)
+        );
+        return db.aors.filter((a) => a.financeConfirmed && visibleProjectIds.has(a.projectId));
+      }),
+    // Every AOR (confirmed or not) across every project the acting user
+    // can see — used for the Original Budget insufficient-balance
+    // knock-off check, which counts an AOR's fund the moment it's added,
+    // not only once Finance Confirmed.
+    listAll: () =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        const teamMembers = teamMembersByProject();
+        const visibleProjectIds = new Set(
+          db.projects.filter((p) => canSeeProject(p, user, teamMembers.get(p.id) ?? [])).map((p) => p.id)
+        );
+        return db.aors.filter((a) => visibleProjectIds.has(a.projectId));
+      }),
+    get: (id: string) =>
+      run(() => {
+        const aor = getDb().aors.find((a) => a.id === id);
+        if (!aor) throw new Error('Not found');
+        return aor;
+      }),
+    create: (projectId: string) =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        const project = getProjectOrThrow(projectId);
+        const teamMemberIds = db.teamMembers.filter((m) => m.projectId === projectId).map((m) => m.userId);
+        if (!isOwningBranchRep(user, project) && !teamMemberIds.includes(user.id)) {
+          throw new Error('Only the owning Branch Rep or a team member can add an AOR');
+        }
+        const aor: Aor = {
+          id: nextId('aor'),
+          projectId,
+          approvedByUserId: null,
+          approvedDate: null,
+          developmentApprovedFund: 0,
+          operatingApprovedFund: 0,
+          startDate: null,
+          expiredDate: null,
+          financeConfirmed: false,
+          financeConfirmedByUserId: null,
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        db.aors.push(aor);
+        saveDb();
+        return aor;
+      }),
+    update: (
+      id: string,
+      data: Partial<Pick<Aor, 'approvedByUserId' | 'approvedDate' | 'developmentApprovedFund' | 'operatingApprovedFund' | 'startDate' | 'expiredDate'>>
+    ) =>
+      run(() => {
+        const user = requireUser();
+        const db = getDb();
+        const aor = db.aors.find((a) => a.id === id);
+        if (!aor) throw new Error('Not found');
+        if (aor.financeConfirmed) throw new Error('This AOR is Finance Confirmed and can no longer be edited');
+        const project = getProjectOrThrow(aor.projectId);
+        const teamMemberIds = db.teamMembers.filter((m) => m.projectId === aor.projectId).map((m) => m.userId);
+        if (!isOwningBranchRep(user, project) && !teamMemberIds.includes(user.id)) {
+          throw new Error('Only the owning Branch Rep or a team member can edit this AOR');
+        }
+        if ('approvedByUserId' in data) aor.approvedByUserId = data.approvedByUserId ?? null;
+        if ('approvedDate' in data) aor.approvedDate = data.approvedDate ?? null;
+        if ('developmentApprovedFund' in data) aor.developmentApprovedFund = Number(data.developmentApprovedFund) || 0;
+        if ('operatingApprovedFund' in data) aor.operatingApprovedFund = Number(data.operatingApprovedFund) || 0;
+        if ('startDate' in data) aor.startDate = data.startDate ?? null;
+        if ('expiredDate' in data) aor.expiredDate = data.expiredDate ?? null;
+        aor.updatedAt = now();
+        saveDb();
+        return aor;
+      }),
+    // Finance Officer/Finance Manager (or Super Admin) locks the AOR in —
+    // this is also the moment it starts appearing in the cross-project
+    // Project AOR listing.
+    confirm: (id: string) =>
+      run(() => {
+        const user = requireUser();
+        if (!isFinance(user)) throw new Error('Only Finance Officer or Finance Manager can confirm an AOR');
+        const aor = getDb().aors.find((a) => a.id === id);
+        if (!aor) throw new Error('Not found');
+        if (aor.financeConfirmed) throw new Error('This AOR is already Finance Confirmed');
+        aor.financeConfirmed = true;
+        aor.financeConfirmedByUserId = user.id;
+        aor.updatedAt = now();
+        saveDb();
+        return aor;
       }),
   },
 };

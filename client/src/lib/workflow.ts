@@ -133,6 +133,20 @@ export function isOwningBranchRep(user: Pick<User, 'id' | 'groups'>, project: { 
   return user.id === project.openedByUserId && inGroup(user, 'Branch Rep');
 }
 
+// Whether `user` may see this Project Profile at all (in listings like
+// Project Profile / Project AOR) — Finance (Officer, Manager, or Admin)
+// always sees every project; everyone else only sees ones they opened as
+// Branch Rep or are a team member of.
+export function canSeeProject(
+  project: { openedByUserId: string },
+  user: User,
+  teamMemberUserIds: readonly string[]
+): boolean {
+  if (isFinanceOrFinanceAdmin(user)) return true;
+  if (isOwningBranchRep(user, project)) return true;
+  return teamMemberUserIds.includes(user.id);
+}
+
 // Edits the duplicated Fin Supported record (not the original line) —
 // Finance Officer/Finance Manager only.
 export function canEditFinSupported(user: Pick<User, 'groups'>): boolean {

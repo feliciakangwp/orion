@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
 import { canApprove, canReject, userCanAct } from '../lib/workflow';
+import { ReassignPanel } from './ReassignPanel';
 import type { BudgetLine, Project } from '../types';
 
 // A row for an MTP action-queue tab (Review Phase / Approval Phase /
@@ -21,6 +22,7 @@ export function MtpActionRow({
 }) {
   const { currentUser, users } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [showReassign, setShowReassign] = useState(false);
   const owner = project ? { openedByUserId: project.openedByUserId } : { openedByUserId: line.assignedToUserId };
   const canAct = (!!currentUser && userCanAct(line, currentUser, owner)) && periodEditable;
   const nameOf = (id: string | null) => (id ? users.find((u) => u.id === id)?.name ?? id : '—');
@@ -65,7 +67,13 @@ export function MtpActionRow({
               Reject
             </Button>
           )}
+          <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => setShowReassign(true)}>
+            Reassign
+          </Button>
         </div>
+        {showReassign && (
+          <ReassignPanel line={line} isAdHoc={line.projectId === null} onClose={() => setShowReassign(false)} onSaved={onUpdated} />
+        )}
       </td>
     </tr>
   );

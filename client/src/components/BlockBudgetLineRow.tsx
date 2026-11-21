@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
 import { canApprove, canReject, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
+import { ReassignPanel } from './ReassignPanel';
 import type { AccountCode, BlockBudgetLineWithReferences, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project, User } from '../types';
 
 // A line's owning Branch Rep for ownership/edit checks — mirrors
@@ -56,6 +57,7 @@ export function BlockBudgetLineRow({
 }) {
   const { currentUser, users, simulationYear } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [showReassign, setShowReassign] = useState(false);
   const owner = ownerOf(line, project);
   const isBranchRepOwner = !!currentUser && isOwningBranchRep(currentUser, owner);
   const editable = isBranchRepOwner && isEditableByBranchRep(line.step) && periodEditable;
@@ -350,7 +352,18 @@ export function BlockBudgetLineRow({
               Delete
             </Button>
           )}
+          <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => setShowReassign(true)}>
+            Reassign
+          </Button>
         </div>
+        {showReassign && (
+          <ReassignPanel
+            line={line}
+            isAdHoc={line.projectId === null}
+            onClose={() => setShowReassign(false)}
+            onSaved={(updated) => onServerUpdate({ ...line, ...updated })}
+          />
+        )}
       </td>
     </tr>
   );

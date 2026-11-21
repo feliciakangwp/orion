@@ -100,6 +100,8 @@ export function TeamMembersTab({ project }: { project: Project }) {
   useEffect(reload, [project.id]);
 
   const isOwningBranchRep = !!currentUser && isOwningBranchRepUser(currentUser, project);
+  const isTeamMember = !!currentUser && members.some((m) => m.userId === currentUser.id);
+  const canAdd = isOwningBranchRep || isTeamMember;
   const userOf = (id: string): User | undefined => users.find((u) => u.id === id);
 
   async function remove(id: string) {
@@ -109,7 +111,7 @@ export function TeamMembersTab({ project }: { project: Project }) {
 
   return (
     <div className="max-w-xl">
-      {isOwningBranchRep && (
+      {canAdd && (
         <div className="mb-4">
           <Button onClick={() => setShowAdd(true)}>+ Add</Button>
         </div>

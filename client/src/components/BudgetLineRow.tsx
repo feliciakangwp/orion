@@ -4,6 +4,7 @@ import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
 import { canApprove, canReject, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
 import { annualVarianceAmount, approvedOriginalBudgetOf } from '../lib/variance';
+import { ReassignPanel } from './ReassignPanel';
 import type { AccountCode, BudgetLine, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project, User } from '../types';
 
 // A line's owning Branch Rep for ownership/edit checks — the real project's
@@ -27,6 +28,7 @@ export function BudgetLineRow({
   teamProjects,
   periodEditable,
   firstPeriodLocked,
+  insufficientAorBalance,
   onLocalEdit,
   onServerUpdate,
   onRemoved,
@@ -57,6 +59,11 @@ export function BudgetLineRow({
   // flowOriginalBudgetIntoMtp in api.ts). Computed by the parent, since
   // it's the same check for every row.
   firstPeriodLocked?: boolean;
+  // Original Budget only: this line's project+type (Development or
+  // Operating) currently has more budgeted against it than its AOR fund
+  // covers — highlighted red for Branch Rep attention (see lib/aor.ts).
+  // Submitting/approving still works regardless. Computed by the parent.
+  insufficientAorBalance?: boolean;
   onLocalEdit: (line: BudgetLine) => void;
   onServerUpdate: (line: BudgetLine) => void;
   onRemoved: (id: string) => void;
@@ -64,6 +71,7 @@ export function BudgetLineRow({
 }) {
   const { currentUser, users, simulationYear } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [showReassign, setShowReassign] = useState(false);
   const owner = ownerOf(line, project);
   const isBranchRepOwner = !!currentUser && isOwningBranchRep(currentUser, owner);
   const editable = isBranchRepOwner && isEditableByBranchRep(line.step) && periodEditable;
@@ -143,9 +151,12 @@ export function BudgetLineRow({
   const cellInput = 'w-28 rounded border border-slate-300 px-1.5 py-1 text-xs disabled:bg-slate-50 disabled:text-slate-400';
 
   return (
-    <tr className="align-top">
-      <td className="sticky left-0 z-10 bg-white px-3 py-2">
+    <tr className={`align-top ${insufficientAorBalance ? 'bg-rose-50' : ''}`}>
+      <td className={`sticky left-0 z-10 px-3 py-2 ${insufficientAorBalance ? 'bg-rose-50' : 'bg-white'}`}>
         <StatusBadge status={line.status} />
+        {insufficientAorBalance && (
+          <div className="mt-1 max-w-[10rem] text-[10px] font-medium text-rose-600">Insufficient AOR balance</div>
+        )}
         {error && <div className="mt-1 max-w-[10rem] text-[10px] text-rose-600">{error}</div>}
       </td>
       {isAnnualBudget && (
@@ -394,7 +405,7 @@ export function BudgetLineRow({
           ))}
         </select>
       </td>
-      <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-2 py-2">
+      <td className={`sticky right-0 z-10 whitespace-nowrap px-2 py-2 ${insufficientAorBalance ? 'bg-rose-50' : 'bg-white'}`}>
         <div className="flex flex-col gap-1">
           {isBranchRepOwner && periodEditable && canSubmit(line.step) && (
             <Button className="!px-2 !py-1 text-xs" onClick={submit}>
@@ -416,7 +427,18 @@ export function BudgetLineRow({
               Delete
             </Button>
           )}
+          <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => setShowReassign(true)}>
+            Reassign
+          </Button>
         </div>
+        {showReassign && (
+          <ReassignPanel
+            line={line}
+            isAdHoc={line.projectId === null}
+            onClose={() => setShowReassign(false)}
+            onSaved={onServerUpdate}
+          />
+        )}
       </td>
     </tr>
   );

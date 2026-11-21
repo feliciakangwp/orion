@@ -163,6 +163,27 @@ export interface SubAccountCode {
   createdAt: string;
 }
 
+// ---------- AOR (per project, Branch Rep keys in, Finance confirms) ----------
+// A Project Profile can have more than one AOR (e.g. a later top-up), so
+// this is a list, not a single record. "Year" and "Status"
+// (Active/Closed/Expired) are always derived, never stored — see
+// `lib/aor.ts`. Once `financeConfirmed` is set, every field here is
+// locked for everyone, Finance included.
+export interface Aor {
+  id: string;
+  projectId: string;
+  approvedByUserId: string | null; // an SMGT user
+  approvedDate: string | null;
+  developmentApprovedFund: number;
+  operatingApprovedFund: number;
+  startDate: string | null;
+  expiredDate: string | null;
+  financeConfirmed: boolean;
+  financeConfirmedByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type BudgetKind = 'MTP' | 'BLOCK' | 'RB' | 'OB';
 
 // ---------- Budget Period (Finance Admin) ----------

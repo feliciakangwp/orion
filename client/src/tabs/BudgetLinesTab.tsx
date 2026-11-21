@@ -4,9 +4,10 @@ import { useAuth } from '../AuthContext';
 import { BudgetLineRow } from '../components/BudgetLineRow';
 import { Button, Card, StatusBadge } from '../components/ui';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind } from '../lib/budgetPeriod';
+import { hasInsufficientAorBalance } from '../lib/aor';
 import { periodKeys, periodSpan } from '../lib/calc';
 import { isFinanceOrFinanceAdmin, isOwningBranchRep } from '../lib/workflow';
-import type { AccountCode, BudgetKind, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project } from '../types';
+import type { AccountCode, Aor, BudgetKind, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project } from '../types';
 
 const KIND_LABEL: Record<BudgetKind, string> = {
   MTP: 'MTP',
@@ -24,6 +25,8 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
   const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
   const [ictCategories, setIctCategories] = useState<IctExpenditureCategory[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
+  const [aors, setAors] = useState<Aor[]>([]);
+  const [allObLines, setAllObLines] = useState<BudgetLine[]>([]);
 
   function reload() {
     api.budgetLines.list(project.id, kind).then(setLines);
@@ -33,6 +36,10 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
     api.costCentres.list().then(setCostCentres);
     api.ictExpenditureCategories.list().then(setIctCategories);
     api.budgetPeriods.list().then(setBudgetPeriods);
+    if (kind === 'OB') {
+      api.aors.list(project.id).then(setAors);
+      api.budgetLines.listAllForProject(project.id, 'OB').then(setAllObLines);
+    }
   }
   // Re-fetch on user change too: which lines are visible depends on who's
   // acting (see canSeeLine), so switching users must refresh the list
@@ -56,6 +63,23 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
     return periodKeys(kind, simulationYear);
   }, [lines, kind, simulationYear]);
 
+  // Original Budget only: whether this project's Development/Operating
+  // AOR fund currently has enough headroom for everything budgeted for
+  // it so far — flagged red for Branch Rep attention (see lib/aor.ts).
+  // Uses every OB line for the project (not just the ones this viewer
+  // can see) so the check reflects the project's true total spend.
+  const insufficientByLineId = useMemo(() => {
+    const result = new Map<string, boolean>();
+    if (kind !== 'OB') return result;
+    const devSpend = allObLines.filter((l) => l.opsOrDev === 'Dev').reduce((sum, l) => sum + l.total, 0);
+    const opsSpend = allObLines.filter((l) => l.opsOrDev === 'Ops').reduce((sum, l) => sum + l.total, 0);
+    for (const l of lines) {
+      const spend = l.opsOrDev === 'Dev' ? devSpend : l.opsOrDev === 'Ops' ? opsSpend : 0;
+      result.set(l.id, hasInsufficientAorBalance(l.opsOrDev, aors, spend));
+    }
+    return result;
+  }, [lines, aors, allObLines, kind]);
+
   async function addNew() {
     await api.budgetLines.create(project.id, kind, simulationYear);
     reload();
@@ -63,6 +87,10 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
 
   function updateLocal(updated: BudgetLine) {
     setLines((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+    // Keep the unfiltered OB total in sync too, since it isn't refetched
+    // on every edit (only on reload()) — otherwise the insufficient-AOR-
+    // balance check above would lag one edit behind.
+    setAllObLines((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
   }
 
   return (
@@ -139,6 +167,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
                 keys={keys}
                 periodEditable={periodEditable}
                 firstPeriodLocked={firstPeriodLocked}
+                insufficientAorBalance={insufficientByLineId.get(line.id) ?? false}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
                 onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}

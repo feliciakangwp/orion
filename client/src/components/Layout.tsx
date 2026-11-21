@@ -141,6 +141,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <NavItem to="/projects/requests" onNavigate={onNavigate}>
             Project Profile Request
           </NavItem>
+          <NavItem to="/projects/aor" onNavigate={onNavigate}>
+            Project AOR
+          </NavItem>
         </NavSection>
 
         <NavSection label="Medium Term Projection">

@@ -440,6 +440,51 @@ so a path-based router would 404 on refresh of a deep link.)
   Closed for Submission transition (and so Mainstreaming) is evaluated
   against this date, not the browser's real clock, so you can test
   deadline behavior without waiting.
+- **AOR** (a Project Profile tab) — a project can have more than one AOR
+  (e.g. a later top-up), each with **AOR Approved By** (an SMGT user),
+  **AOR Approved Date**, **Development Approved Fund**, **Operating
+  Approved Fund**, **Total AOR Approved Amount** (computed, Dev +
+  Operating), **AOR Start Date**, **AOR Expired Date**, and **Finance
+  Confirmed**. Branch Rep (owning, or any team member) keys the details
+  in and adds further AORs with **+ Add**; Finance Officer or Finance
+  Manager ticks **Finance Confirmed**, which locks every field for
+  everyone from then on.
+- **Project AOR** (sidebar: Project Profile → Project AOR) lists every
+  **Finance-Confirmed** AOR the acting user can see (same visibility as
+  Project Profile itself): Project Title, Total/Development/Operating
+  Approved Amount, Start/Expired Date — highlighted red when its Expired
+  Date falls in the current FY. Clicking a row opens its own page: Year
+  (derived from Start Date), Status (**Active**/**Closed**/**Expired** —
+  Closed once the AOR's own balance is fully spent, Expired once its own
+  Expired Date has passed, computed by running every one of the
+  project's AORs as a waterfall, earliest Start Date first, against its
+  lifetime Original Budget spend — see `lib/aor.ts`), Total/Development/
+  Operating Approved Amount with remaining balance, and a monthly
+  transaction ledger (every Original Budget month ever submitted for
+  that project, split Development/Operating).
+- **Insufficient AOR balance** — on an Original Budget line (Budget Line
+  Item, either the per-project tab or Annual Budget's own cross-project
+  page), if a project's Development or Operating total spend (summed
+  across every Original Budget line of that type, any cycle) exceeds the
+  combined fund of every AOR for that project (confirmed or not), the
+  line is highlighted red with an "Insufficient AOR balance" note.
+  Submitting/approving still goes through — it's a warning for Branch Rep
+  to raise a top-up or another AOR, not a block — and it clears the
+  moment a new (even unconfirmed) AOR brings the pool back above spend.
+- **Reassign** (a button on every Budget Line Item row, in Review
+  Phase/Approval Phase too) lets anyone who can currently see the line —
+  not just its own Branch Rep — change its Reviewer 1, Reviewer 2,
+  Approver, or (ad hoc lines only) Branch Rep, regardless of the line's
+  workflow step. Reassigning a role away from yourself means you
+  naturally stop seeing that line afterward.
+- **Project visibility**: Project Profile, Project AOR, and a project's
+  own AOR tab all follow the same rule as a budget line — Branch Rep only
+  sees a project they opened or are a team member of; Finance (Officer,
+  Manager, or Admin) sees every one. **Team Members**: any current team
+  member (not just the owning Branch Rep) can add further team members;
+  a newly-added member immediately sees every one of that project's
+  lines, past history included, since visibility is a live team-
+  membership check, not a point-in-time grant.
 
 ## Assumptions made where the spec was ambiguous
 
@@ -691,3 +736,58 @@ so a path-based router would 404 on refresh of a deep link.)
   Finance Admin can still type anything, same as every other catalog's
   free-text code field (Account, Cost Centre) having no format
   validation either.
+- An AOR's fund counts toward the Original Budget insufficient-balance
+  check the moment it's added, whether or not Finance has ticked Finance
+  Confirmed yet — only the cross-project **Project AOR** listing itself
+  is confirmed-only (per spec: "when the AOR is filled and confirm... it
+  will create the line in the Project AOR"). Finance Confirmed is read as
+  Finance's own lock-in step, not the moment the fund becomes real for
+  knock-off purposes.
+- An AOR's "Year" and "Status" are always derived (from Start Date, and
+  from a waterfall balance check against lifetime Original Budget spend,
+  respectively), never their own stored/editable fields — the spec's
+  field list for the AOR tab itself didn't include either, and Status
+  was only described for the Project AOR detail view.
+- A project's AORs are treated as a single waterfall per fund type,
+  ordered by Start Date (earliest first): spend knocks off the first
+  AOR's fund before spilling into the next one's. This was necessary to
+  give "Closed" (fully spent) and remaining-balance a definite meaning
+  once a project has more than one AOR, since the spec describes the
+  knock-off for "the AOR" in the singular. The simpler insufficient-
+  balance warning on Original Budget, by contrast, just pools every
+  AOR's fund for that type and compares it against total spend — it only
+  needs "is there enough overall," not which specific AOR covers it.
+- "Monthly expense" on the AOR ledger is Original Budget spend only
+  (never Revised Budget or any other kind) — matching "When Branch Rep
+  budgets for annual budget, it will knock off from the funds approved
+  from the AOR" being described right alongside "when Branch Rep is
+  budgeting for Original Budget" in the very next paragraph, and it
+  accumulates across every Annual Budget cycle ever run for the project
+  (not just the current one), since an AOR's balance is a lifetime
+  ledger, not a per-cycle one.
+- The "expiring that FY" red highlight on Project AOR compares the AOR's
+  Expired Date's FY against the current Simulation Date's FY (both via
+  the same `fyOfDate` used everywhere else in the app), not calendar-year
+  or days-remaining — consistent with how every other "this FY" concept
+  in ORION is computed.
+- Reassign is available on every Budget Line Item row and on Review
+  Phase/Approval Phase's action-queue rows (where "pending action for
+  them" visibility already applies), gated server-side by the same
+  `canSeeLine` check that already governs whether a line is visible to
+  the acting user at all — there's no separate, narrower "who can
+  reassign" permission, since by the spec's own wording ("accessed by
+  those who have access to the lines") visibility already is the
+  permission.
+- Reassigning the "Branch Rep" only changes anything for an **ad hoc**
+  line (no Project Profile) — a project-attached line's Branch Rep is
+  always the Project Profile's own opener (`isOwningBranchRep` is keyed
+  off the project, not the line), so Reassign only offers that control
+  for ad hoc lines; a project-attached line's Reassign panel offers just
+  Reviewer 1/2 and Approver.
+- Project Profile's own visibility fix (Branch Rep sees only projects
+  they opened or are a team member of) was applied to the **listing**
+  endpoints only (`projects.list`, used by Project Profile and Project
+  AOR) — direct navigation to a project's own URL by someone without
+  access isn't blocked, consistent with how every other page in ORION
+  enforces visibility through filtered listings and field-level
+  permission checks rather than a route-level hard deny.

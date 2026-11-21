@@ -15,6 +15,8 @@ const STATUS_COLORS: Record<string, string> = {
   'Closed for Submission': 'bg-amber-100 text-amber-800',
   'Closed and Locked': 'bg-rose-100 text-rose-800',
   Required: 'bg-rose-100 text-rose-800',
+  Closed: 'bg-slate-200 text-slate-700',
+  Expired: 'bg-rose-100 text-rose-800',
 };
 
 export function StatusBadge({ status }: { status: string }) {

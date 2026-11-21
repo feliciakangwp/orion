@@ -16,7 +16,9 @@ export function ProjectProfileList() {
   function reload() {
     api.projects.list().then(setProjects);
   }
-  useEffect(reload, []);
+  // Re-fetch on user change too: which projects are visible depends on
+  // who's acting (see canSeeProject), so switching users must refresh.
+  useEffect(reload, [currentUser?.id]);
 
   const canCreate = !!currentUser && canCreateProject(currentUser);
   const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? id;

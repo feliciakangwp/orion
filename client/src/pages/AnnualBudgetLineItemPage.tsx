@@ -4,9 +4,10 @@ import { useAuth } from '../AuthContext';
 import { BudgetLineRow } from '../components/BudgetLineRow';
 import { Button, Card, StatusBadge } from '../components/ui';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus } from '../lib/budgetPeriod';
+import { hasInsufficientAorBalance } from '../lib/aor';
 import { periodKeys } from '../lib/calc';
 import { canCreateProject, isOwningBranchRep } from '../lib/workflow';
-import type { AccountCode, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project } from '../types';
+import type { AccountCode, Aor, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project } from '../types';
 
 // Annual Budget > Revised/Original Budget Line Item: every line of the
 // given kind the acting user can see, across every Project Profile plus
@@ -24,6 +25,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
   const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
   const [ictCategories, setIctCategories] = useState<IctExpenditureCategory[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
+  const [aors, setAors] = useState<Aor[]>([]);
 
   function reload() {
     api.budgetLines.listByKinds([kind]).then(setLines);
@@ -37,6 +39,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
     api.costCentres.list().then(setCostCentres);
     api.ictExpenditureCategories.list().then(setIctCategories);
     api.budgetPeriods.list().then(setBudgetPeriods);
+    if (kind === 'OB') api.aors.listAll().then(setAors);
   }
   useEffect(reload, [currentUser?.id, kind]);
 
@@ -57,6 +60,37 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
     if (lines.length > 0) return Object.keys(lines[0].periods);
     return periodKeys(kind, simulationYear);
   }, [lines, kind, simulationYear]);
+
+  // Original Budget only: whether a line's project+type (Development or
+  // Operating) currently has enough AOR headroom for everything that
+  // kind has budgeted for it so far — flagged red for Branch Rep
+  // attention (see lib/aor.ts). Approval still goes through regardless.
+  const insufficientByLineId = useMemo(() => {
+    const result = new Map<string, boolean>();
+    if (kind !== 'OB') return result;
+    const aorsByProject = new Map<string, Aor[]>();
+    for (const a of aors) {
+      const arr = aorsByProject.get(a.projectId) ?? [];
+      arr.push(a);
+      aorsByProject.set(a.projectId, arr);
+    }
+    const spendByProjectType = new Map<string, number>();
+    for (const l of lines) {
+      if (!l.projectId) continue;
+      const key = `${l.projectId}:${l.opsOrDev}`;
+      spendByProjectType.set(key, (spendByProjectType.get(key) ?? 0) + l.total);
+    }
+    for (const l of lines) {
+      if (!l.projectId) {
+        result.set(l.id, false);
+        continue;
+      }
+      const projectAors = aorsByProject.get(l.projectId) ?? [];
+      const spend = spendByProjectType.get(`${l.projectId}:${l.opsOrDev}`) ?? 0;
+      result.set(l.id, hasInsufficientAorBalance(l.opsOrDev, projectAors, spend));
+    }
+    return result;
+  }, [lines, aors, kind]);
 
   async function addNew() {
     await api.budgetLines.createAdHoc(kind, simulationYear, null);
@@ -144,6 +178,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
                 projectTitleEditable
                 teamProjects={teamProjects}
                 periodEditable={periodEditable}
+                insufficientAorBalance={insufficientByLineId.get(line.id) ?? false}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
                 onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}

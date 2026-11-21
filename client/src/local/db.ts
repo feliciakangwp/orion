@@ -2,6 +2,7 @@ import { BUDGET_EXERCISE_TYPES, GROUPS } from '../types';
 import type {
   AccountCode,
   AccountLevel,
+  Aor,
   BudgetExerciseType,
   BudgetLine,
   BudgetPeriod,
@@ -41,14 +42,14 @@ export interface DbShape {
   finSupportedLines: FinSupportedLine[];
   teamMembers: TeamMember[];
   budgetPeriods: BudgetPeriod[];
+  aors: Aor[];
   seq: number;
 }
 
-// Bumped again from orion.db.v8: new ICT Expenditure Category, Division
-// and Sub Account catalogs — this is a clean slate with a different
-// shape, so old data is simply left behind under its old key rather than
-// migrated.
-const STORAGE_KEY = 'orion.db.v9';
+// Bumped again from orion.db.v9: new AOR collection — this is a clean
+// slate with a different shape, so old data is simply left behind under
+// its old key rather than migrated.
+const STORAGE_KEY = 'orion.db.v10';
 
 function buildSeedUsers(): User[] {
   const now = new Date().toISOString();
@@ -279,6 +280,7 @@ function emptyDb(): DbShape {
     finSupportedLines: [],
     teamMembers: [],
     budgetPeriods: buildSeedBudgetPeriods(),
+    aors: [],
     seq: 1,
   };
 }

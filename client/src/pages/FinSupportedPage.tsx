@@ -93,7 +93,7 @@ export function FinSupportedPage({
     api.finSupportedLines.list().then(setAllLines);
     api.projects.list().then(setProjects);
   }
-  useEffect(reload, []);
+  useEffect(reload, [currentUser?.id]);
 
   const lines = useMemo(() => allLines.filter((l) => kinds.includes(l.kind)), [allLines, kinds.join(',')]);
   const editable = !!currentUser && canEditFinSupported(currentUser);

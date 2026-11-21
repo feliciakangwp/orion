@@ -18,7 +18,7 @@ export function ProjectProfileRequestPage() {
   function reload() {
     api.projects.list().then(setProjects);
   }
-  useEffect(reload, []);
+  useEffect(reload, [currentUser?.id]);
 
   const financeActor = !!currentUser && isFinance(currentUser);
   const pending = projects

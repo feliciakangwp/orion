@@ -12,6 +12,9 @@ import { ClarificationFOPage } from './pages/ClarificationFOPage';
 import { FinanceAdminAccountPage } from './pages/FinanceAdminAccountPage';
 import { FinanceAdminBudgetPeriodPage } from './pages/FinanceAdminBudgetPeriodPage';
 import { FinanceAdminCostCentrePage } from './pages/FinanceAdminCostCentrePage';
+import { FinanceAdminDivisionPage } from './pages/FinanceAdminDivisionPage';
+import { FinanceAdminIctExpenditurePage } from './pages/FinanceAdminIctExpenditurePage';
+import { FinanceAdminSubAccountPage } from './pages/FinanceAdminSubAccountPage';
 import { FinanceAdminFundingPage } from './pages/FinanceAdminFundingPage';
 import { FinanceAdminInflationRatePage } from './pages/FinanceAdminInflationRatePage';
 import { FinSupportedPage } from './pages/FinSupportedPage';
@@ -63,6 +66,9 @@ export default function App() {
         <Route path="/finance-admin/funding" element={<FinanceAdminFundingPage />} />
         <Route path="/finance-admin/account" element={<FinanceAdminAccountPage />} />
         <Route path="/finance-admin/cost-centre" element={<FinanceAdminCostCentrePage />} />
+        <Route path="/finance-admin/ict-expenditure" element={<FinanceAdminIctExpenditurePage />} />
+        <Route path="/finance-admin/division" element={<FinanceAdminDivisionPage />} />
+        <Route path="/finance-admin/sub-account" element={<FinanceAdminSubAccountPage />} />
         <Route path="/finance-admin/budget-period" element={<FinanceAdminBudgetPeriodPage />} />
         <Route path="/finance-admin/inflation-rate" element={<FinanceAdminInflationRatePage />} />
         <Route path="/it-admin/users" element={<UserManagementPage />} />

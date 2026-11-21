@@ -6,7 +6,7 @@ import { Button, Card, StatusBadge } from '../components/ui';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus } from '../lib/budgetPeriod';
 import { periodKeys } from '../lib/calc';
 import { canCreateProject, isOwningBranchRep } from '../lib/workflow';
-import type { AccountCode, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, Project } from '../types';
+import type { AccountCode, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project } from '../types';
 
 // Annual Budget > Revised/Original Budget Line Item: every line of the
 // given kind the acting user can see, across every Project Profile plus
@@ -22,6 +22,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
   const [catalog, setCatalog] = useState<FundingSource[]>([]);
   const [accountCodes, setAccountCodes] = useState<AccountCode[]>([]);
   const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
+  const [ictCategories, setIctCategories] = useState<IctExpenditureCategory[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
 
   function reload() {
@@ -34,6 +35,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
     api.fundingCatalog.list().then(setCatalog);
     api.accountCodes.list().then(setAccountCodes);
     api.costCentres.list().then(setCostCentres);
+    api.ictExpenditureCategories.list().then(setIctCategories);
     api.budgetPeriods.list().then(setBudgetPeriods);
   }
   useEffect(reload, [currentUser?.id, kind]);
@@ -137,6 +139,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
                 catalog={catalog}
                 accountCodes={accountCodes}
                 costCentres={costCentres}
+                ictCategories={ictCategories}
                 keys={keys}
                 projectTitleEditable
                 teamProjects={teamProjects}

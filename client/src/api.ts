@@ -39,13 +39,16 @@ import type {
   BudgetPeriod,
   CostCentreCode,
   CostCentreType,
+  Division,
   ExpenditureNature,
   FinSupportedLine,
   FundingEntry,
   FundingSource,
   Group,
   HistoryEntry,
+  IctExpenditureCategory,
   Project,
+  SubAccountCode,
   TeamMember,
   User,
   WorkflowStep,
@@ -636,6 +639,72 @@ export const api = {
       }),
   },
 
+  // Populates a budget line's ICT Expenditure Category dropdown (shown
+  // only when "Is it an IT Project?" is Yes). Just a named list — Finance
+  // Admin can only add, never rename/remove.
+  ictExpenditureCategories: {
+    list: () => run(() => getDb().ictExpenditureCategories),
+    create: (name: string) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can add an ICT Expenditure Category');
+        if (!name.trim()) throw new Error('Name is required');
+        const category: IctExpenditureCategory = { id: nextId('ictcat'), name: name.trim(), createdAt: now() };
+        getDb().ictExpenditureCategories.push(category);
+        saveDb();
+        return category;
+      }),
+  },
+
+  // A plain named list of divisions — nothing else in the app references
+  // it yet.
+  divisions: {
+    list: () => run(() => getDb().divisions),
+    create: (name: string) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can add a Division');
+        if (!name.trim()) throw new Error('Name is required');
+        const division: Division = { id: nextId('division'), name: name.trim(), createdAt: now() };
+        getDb().divisions.push(division);
+        saveDb();
+        return division;
+      }),
+  },
+
+  // Each Project Profile is assigned a unique Sub Account (see
+  // projects.update's subAccount field), which then auto-populates a new
+  // budget line's own Sub Account (see budgetLines.create/createAdHoc).
+  subAccounts: {
+    list: () => run(() => getDb().subAccounts),
+    create: (data: { code: string; name: string }) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can add a Sub Account');
+        if (!data.code.trim() || !data.name.trim()) throw new Error('Sub Account code and name are required');
+        const subAccount: SubAccountCode = {
+          id: nextId('subacct'),
+          code: data.code.trim(),
+          name: data.name.trim(),
+          status: 'Active',
+          createdAt: now(),
+        };
+        getDb().subAccounts.push(subAccount);
+        saveDb();
+        return subAccount;
+      }),
+    setStatus: (id: string, status: SubAccountCode['status']) =>
+      run(() => {
+        const user = requireUser();
+        if (!canManageFinanceAdminCatalog(user)) throw new Error('Only Finance Admin can change a Sub Account');
+        const subAccount = getDb().subAccounts.find((s) => s.id === id);
+        if (!subAccount) throw new Error('Not found');
+        subAccount.status = status;
+        saveDb();
+        return subAccount;
+      }),
+  },
+
   // Non IT Item / IT Item percentages — drives both recurring-line
   // auto-growth and the MTP Variance justification threshold. Finance
   // Admin can only change the two existing rows' values, not add/remove.
@@ -987,7 +1056,9 @@ export const api = {
           description: '',
           opsOrDev: '',
           account: '',
-          subAcct: '',
+          // Auto-populated from the project's own Sub Account (Finance
+          // fills that in on Details) — Branch Rep can still edit it.
+          subAcct: project.subAccount,
           fundingEntryId: null,
           recurring: '',
           costCentre: '',

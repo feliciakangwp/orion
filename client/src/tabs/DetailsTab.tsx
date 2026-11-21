@@ -3,15 +3,19 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, Card, Field, inputCls, selectCls, StatusBadge, textareaCls } from '../components/ui';
 import { isFinance as isFinanceUser, isOwningBranchRep } from '../lib/workflow';
-import type { Project } from '../types';
+import type { Project, SubAccountCode } from '../types';
 
 export function DetailsTab({ project, onChange }: { project: Project; onChange: () => void }) {
   const { currentUser, users } = useAuth();
   const [form, setForm] = useState(project);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [subAccounts, setSubAccounts] = useState<SubAccountCode[]>([]);
 
   useEffect(() => setForm(project), [project]);
+  useEffect(() => {
+    api.subAccounts.list().then(setSubAccounts);
+  }, []);
 
   const branchRepOwner = !!currentUser && isOwningBranchRep(currentUser, project);
   const isFinance = !!currentUser && isFinanceUser(currentUser);
@@ -125,12 +129,21 @@ export function DetailsTab({ project, onChange }: { project: Project; onChange: 
         </div>
 
         <Field label="Sub Account" hint="Filled in by Finance once routed">
-          <input
-            className={inputCls}
+          <select
+            className={selectCls}
             value={form.subAccount}
             disabled={!financeEditable}
             onChange={(e) => setForm({ ...form, subAccount: e.target.value })}
-          />
+          >
+            <option value="">Select&hellip;</option>
+            {subAccounts
+              .filter((s) => s.status === 'Active')
+              .map((s) => (
+                <option key={s.id} value={`${s.code} ${s.name}`}>
+                  {s.code} {s.name}
+                </option>
+              ))}
+          </select>
         </Field>
         <Field label="Finance Officer" hint="Filled in by Finance once routed">
           <select

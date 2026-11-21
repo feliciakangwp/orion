@@ -250,6 +250,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <NavItem to="/finance-admin/cost-centre" onNavigate={onNavigate}>
               Cost Centre
             </NavItem>
+            <NavItem to="/finance-admin/ict-expenditure" onNavigate={onNavigate}>
+              ICT Expenditure
+            </NavItem>
+            <NavItem to="/finance-admin/division" onNavigate={onNavigate}>
+              Division
+            </NavItem>
+            <NavItem to="/finance-admin/sub-account" onNavigate={onNavigate}>
+              Sub Account
+            </NavItem>
             <NavItem to="/finance-admin/budget-period" onNavigate={onNavigate}>
               Budget Period
             </NavItem>

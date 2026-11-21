@@ -162,11 +162,32 @@ so a path-based router would 404 on refresh of a deep link.)
   - **Cost Centre** — **Display Name** (Code + Name), **Code**, **Name**,
     **Type** (NO01 Administration / NO02 Revenue / NO03 Preventive),
     **Nature of Expenditure** (Development/Operating), and a tagged
-    **Finance Officer**. Seeded with 6 sample rows. Finance Admin can
+    **Finance Officer**. Seeded with 19 sample rows. Finance Admin can
     change a row's Type, Nature of Expenditure and Finance Officer.
   Finance Admin adds new entries to any of the three with **+ Add**. The
   Account and Cost Centre fields on every budget line (MTP/RB/OB/Block) are
   dropdowns populated from these two catalogs rather than free text.
+- **Finance Admin → ICT Expenditure / Division / Sub Account** (same
+  sidebar section) are three more plain catalogs:
+  - **ICT Expenditure** — just a **Name** (seeded with 10 sample
+    categories, e.g. Agency ICT Staff Cost, Software-as-a-Service).
+    Populates a budget line's **ICT Expenditure Category** dropdown
+    (shown only when "Is it an IT Project?" is Yes) — previously free
+    text.
+  - **Division** — just a **Name** (seeded with 7 sample divisions).
+    Nothing else in the app references it yet.
+  - **Sub Account** — **Sub Account Code** (always `Q` + 4 digits, e.g.
+    `Q1095`), **Sub Account Name**, and a toggleable **Status**
+    (Active/Inactive); seeded with 7 sample rows. Each Project Profile is
+    assigned a unique Sub Account on its **Details** tab (Finance only,
+    once Pending) — picking one from this catalog, same convention as
+    Account/Cost Centre (`${code} ${name}`). A new budget line created
+    from one of that project's own tabs (MTP/RB/OB/Block) then
+    auto-populates its own Sub Account field from the project's, though
+    the Branch Rep can still edit it afterward.
+  Finance Admin adds new entries to any of the three with **+ Add**;
+  ICT Expenditure and Division have no Status (nothing to toggle, per
+  spec — just a name list).
 - **Finance Admin → Budget Period** manages the three budgeting exercises —
   **Medium Term Projection** (kind MTP), **Annual Budget** (kinds RB + OB
   together, since Original and Revised are both part of the same annual
@@ -642,3 +663,31 @@ so a path-based router would 404 on refresh of a deep link.)
   layout rather than being retrofitted with the same cross-record lookups
   — the spec's detailed column list was given specifically for the new
   header's own "Budget Line Item" tab.
+- ICT Expenditure and Division are built as pure add-only lists (no
+  Status, no edit, no delete) since the spec described their tables as
+  having only a Name column and a button to add new — unlike Account/Cost
+  Centre/Source of Funding, which do have an explicit Status field. Sub
+  Account does get Status (Active/Inactive, toggleable), since the spec
+  explicitly listed it as a column.
+- The 13 new Cost Centre rows' **Type**, **Nature of Expenditure** and
+  **Finance Officer** were only given as a Display Name (code + name) —
+  Type/Nature were inferred per branch from its name (e.g. "IT
+  Application & Technical Services" as Development, most others as
+  Operating; checkpoint/investigation branches as NO03 Preventive,
+  trade/operations branches as NO02 Revenue, everything else as NO01
+  Administration), and Finance Officer was round-robined across the
+  three existing Finance Officer users, same as the original 6 sample
+  rows' pattern — none of this was specified.
+- A budget line's Sub Account auto-populates from its owning project's
+  Sub Account only when created from **that project's own tabs**
+  (`budgetLines.create`, the "+ New" button inside a Project Profile) —
+  not from the cross-project ad hoc creation flows (Medium Term
+  Projection/Annual Budget/Block Budget's own "Budget Line Item" pages,
+  where a line may not even be attached to a project yet). This matches
+  the spec's own wording, "when a new Budget line is created from the
+  tabs in Project Profile."
+- The Sub Account code's "`Q` + 4 digits" shape (e.g. `Q1095`) is
+  enforced only as sample data and a placeholder hint on the Add form —
+  Finance Admin can still type anything, same as every other catalog's
+  free-text code field (Account, Cost Centre) having no format
+  validation either.

@@ -7,13 +7,16 @@ import type {
   BudgetPeriod,
   CostCentreCode,
   CostCentreType,
+  Division,
   ExpenditureNature,
   FinSupportedLine,
   FundingEntry,
   FundingSource,
   Group,
+  IctExpenditureCategory,
   InflationItem,
   InflationRate,
+  SubAccountCode,
   TeamMember,
   Project,
   User,
@@ -28,6 +31,9 @@ export interface DbShape {
   fundingSources: FundingSource[];
   accountCodes: AccountCode[];
   costCentres: CostCentreCode[];
+  ictExpenditureCategories: IctExpenditureCategory[];
+  divisions: Division[];
+  subAccounts: SubAccountCode[];
   inflationRates: InflationRate[];
   projects: Project[];
   fundingEntries: FundingEntry[];
@@ -38,10 +44,11 @@ export interface DbShape {
   seq: number;
 }
 
-// Bumped again from orion.db.v7: BudgetPeriod gained blockBudgetStartYear
-// for Block Budget — this is a clean slate with a different shape, so old
-// data is simply left behind under its old key rather than migrated.
-const STORAGE_KEY = 'orion.db.v8';
+// Bumped again from orion.db.v8: new ICT Expenditure Category, Division
+// and Sub Account catalogs — this is a clean slate with a different
+// shape, so old data is simply left behind under its old key rather than
+// migrated.
+const STORAGE_KEY = 'orion.db.v9';
 
 function buildSeedUsers(): User[] {
   const now = new Date().toISOString();
@@ -164,6 +171,19 @@ function buildSeedCostCentres(): CostCentreCode[] {
     ['556789', 'Customs Systems Modernisation', 'NO01 Administration', 'Development', 'user_15'],
     ['923456', 'Passenger Clearance Services', 'NO02 Revenue', 'Operating', 'user_16'],
     ['641287', 'K9 Unit Training Facility', 'NO03 Preventive', 'Development', 'user_17'],
+    ['256223', 'HR Management Branch', 'NO01 Administration', 'Operating', 'user_15'],
+    ['256219', 'Administration & Logistics Branch', 'NO01 Administration', 'Operating', 'user_16'],
+    ['256313', 'IT Application & Technical Services', 'NO01 Administration', 'Development', 'user_17'],
+    ['256205', 'Planning & Research', 'NO01 Administration', 'Operating', 'user_15'],
+    ['256241', 'Digital & Delivery Management', 'NO01 Administration', 'Development', 'user_16'],
+    ['256228', 'Transformation Office', 'NO01 Administration', 'Development', 'user_17'],
+    ['256276', 'Trade Strategy & Development', 'NO02 Revenue', 'Operating', 'user_15'],
+    ['256240', 'Operations Policy & Development Branch', 'NO02 Revenue', 'Operating', 'user_16'],
+    ['256261', 'Land Checkpoints & Operations', 'NO03 Preventive', 'Operating', 'user_17'],
+    ['256251', 'Air Checkpoint Branch', 'NO03 Preventive', 'Operating', 'user_15'],
+    ['256235', 'Trade Investigation Branch', 'NO03 Preventive', 'Operating', 'user_16'],
+    ['256237', 'Special Investigation Branch', 'NO03 Preventive', 'Operating', 'user_17'],
+    ['256233', 'Operation Management Branch', 'NO03 Preventive', 'Operating', 'user_15'],
   ];
   return rows.map(([code, name, type, natureOfExpenditure, financeOfficerUserId], i) => ({
     id: `cc_${i + 1}`,
@@ -174,6 +194,51 @@ function buildSeedCostCentres(): CostCentreCode[] {
     financeOfficerUserId,
     createdAt: now,
   }));
+}
+
+function buildSeedIctExpenditureCategories(): IctExpenditureCategory[] {
+  const now = new Date().toISOString();
+  const names = [
+    'Agency ICT Staff Cost',
+    'Application Development & Maintenance',
+    'Contract ICT Staff Cost',
+    'Hardware & Maintenance Cost',
+    'ICT Consulting Service Cost',
+    'ICT Facilities Management Cost',
+    'ICT Security Cost',
+    'Other ICT Cost',
+    'Software & Maintenance Cost',
+    'Software-as-a-Service',
+  ];
+  return names.map((name, i) => ({ id: `ictcat_${i + 1}`, name, createdAt: now }));
+}
+
+function buildSeedDivisions(): Division[] {
+  const now = new Date().toISOString();
+  const names = [
+    'Checkpoint Division',
+    'Compliance Division',
+    'HR Division',
+    'Trade Division',
+    'Intel & Investigation Division',
+    'IT Directorate',
+    'TradeNet Office',
+  ];
+  return names.map((name, i) => ({ id: `division_${i + 1}`, name, createdAt: now }));
+}
+
+function buildSeedSubAccounts(): SubAccountCode[] {
+  const now = new Date().toISOString();
+  const rows: Array<[string, string]> = [
+    ['Q1095', 'ORION'],
+    ['Q1102', 'TradeNet Modernisation'],
+    ['Q1118', 'Customs Systems Renewal'],
+    ['Q1126', 'Checkpoint Digitalisation'],
+    ['Q1134', 'HR Transformation'],
+    ['Q1149', 'Trade Facilitation Platform'],
+    ['Q1157', 'Intel & Investigation Toolkit'],
+  ];
+  return rows.map(([code, name], i) => ({ id: `subacct_${i + 1}`, code, name, status: 'Active', createdAt: now }));
 }
 
 function buildSeedInflationRates(): InflationRate[] {
@@ -204,6 +269,9 @@ function emptyDb(): DbShape {
     fundingSources: buildSeedFundingSources(),
     accountCodes: buildSeedAccountCodes(),
     costCentres: buildSeedCostCentres(),
+    ictExpenditureCategories: buildSeedIctExpenditureCategories(),
+    divisions: buildSeedDivisions(),
+    subAccounts: buildSeedSubAccounts(),
     inflationRates: buildSeedInflationRates(),
     projects: [],
     fundingEntries: [],

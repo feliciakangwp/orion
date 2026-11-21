@@ -41,7 +41,10 @@ export interface Project {
   status: ProjectStatus;
   justification: string;
   additionalComments: string;
-  // Filled in by Finance once routed to them
+  // Filled in by Finance once routed to them. Picked from the Sub Account
+  // catalog (Finance Admin) as "`${code} ${name}`" — each project gets a
+  // unique one, which then auto-populates a new budget line's own Sub
+  // Account the moment it's created from one of this project's tabs.
   subAccount: string;
   developmentCostCentre: string;
   operatingCostCentre: string;
@@ -123,6 +126,40 @@ export interface CostCentreCode {
   type: CostCentreType;
   natureOfExpenditure: ExpenditureNature;
   financeOfficerUserId: string | null;
+  createdAt: string;
+}
+
+// ---------- ICT Expenditure Category catalog (Finance Admin) ----------
+// Just a named list — populates a budget line's ICT Expenditure Category
+// dropdown (shown only when "Is it an IT Project?" is Yes).
+
+export interface IctExpenditureCategory {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+// ---------- Division catalog (Finance Admin) ----------
+// A plain named list of divisions — Finance Admin maintains it, but
+// nothing else in the app references it yet.
+
+export interface Division {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+// ---------- Sub Account catalog (Finance Admin) ----------
+// Each Project Profile is assigned a unique Sub Account (see
+// `Project.subAccount`), which then auto-populates a budget line's own
+// Sub Account field the moment it's created from one of that project's
+// tabs. `code` always starts with Q followed by 4 digits (e.g. "Q1095").
+
+export interface SubAccountCode {
+  id: string;
+  code: string;
+  name: string;
+  status: CatalogStatus;
   createdAt: string;
 }
 

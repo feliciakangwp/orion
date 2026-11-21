@@ -6,7 +6,7 @@ import { Button, Card, StatusBadge } from '../components/ui';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus } from '../lib/budgetPeriod';
 import { periodKeys } from '../lib/calc';
 import { canCreateProject, isOwningBranchRep } from '../lib/workflow';
-import type { AccountCode, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, Project } from '../types';
+import type { AccountCode, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project } from '../types';
 
 // Medium Term Projection > Budget Line Item: every MTP-kind line the acting
 // user can see, across every Project Profile plus any ad hoc line that
@@ -21,6 +21,7 @@ export function BudgetLineItemPage() {
   const [catalog, setCatalog] = useState<FundingSource[]>([]);
   const [accountCodes, setAccountCodes] = useState<AccountCode[]>([]);
   const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
+  const [ictCategories, setIctCategories] = useState<IctExpenditureCategory[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
 
   function reload() {
@@ -33,6 +34,7 @@ export function BudgetLineItemPage() {
     api.fundingCatalog.list().then(setCatalog);
     api.accountCodes.list().then(setAccountCodes);
     api.costCentres.list().then(setCostCentres);
+    api.ictExpenditureCategories.list().then(setIctCategories);
     api.budgetPeriods.list().then(setBudgetPeriods);
   }
   useEffect(reload, [currentUser?.id]);
@@ -138,6 +140,7 @@ export function BudgetLineItemPage() {
                 catalog={catalog}
                 accountCodes={accountCodes}
                 costCentres={costCentres}
+                ictCategories={ictCategories}
                 keys={keys}
                 projectTitleEditable
                 teamProjects={teamProjects}

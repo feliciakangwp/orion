@@ -6,7 +6,7 @@ import { Button, Card, StatusBadge } from '../components/ui';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus, exerciseTypeForKind } from '../lib/budgetPeriod';
 import { periodKeys, periodSpan } from '../lib/calc';
 import { isFinanceOrFinanceAdmin, isOwningBranchRep } from '../lib/workflow';
-import type { AccountCode, BudgetKind, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, Project } from '../types';
+import type { AccountCode, BudgetKind, BudgetLine, BudgetPeriod, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project } from '../types';
 
 const KIND_LABEL: Record<BudgetKind, string> = {
   MTP: 'MTP',
@@ -22,6 +22,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
   const [catalog, setCatalog] = useState<FundingSource[]>([]);
   const [accountCodes, setAccountCodes] = useState<AccountCode[]>([]);
   const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
+  const [ictCategories, setIctCategories] = useState<IctExpenditureCategory[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
 
   function reload() {
@@ -30,6 +31,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
     api.fundingCatalog.list().then(setCatalog);
     api.accountCodes.list().then(setAccountCodes);
     api.costCentres.list().then(setCostCentres);
+    api.ictExpenditureCategories.list().then(setIctCategories);
     api.budgetPeriods.list().then(setBudgetPeriods);
   }
   // Re-fetch on user change too: which lines are visible depends on who's
@@ -133,6 +135,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
                 catalog={catalog}
                 accountCodes={accountCodes}
                 costCentres={costCentres}
+                ictCategories={ictCategories}
                 keys={keys}
                 periodEditable={periodEditable}
                 firstPeriodLocked={firstPeriodLocked}

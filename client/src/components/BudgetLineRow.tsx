@@ -4,7 +4,7 @@ import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
 import { canApprove, canReject, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
 import { annualVarianceAmount, approvedOriginalBudgetOf } from '../lib/variance';
-import type { AccountCode, BudgetLine, CostCentreCode, FundingEntry, FundingSource, Project, User } from '../types';
+import type { AccountCode, BudgetLine, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project, User } from '../types';
 
 // A line's owning Branch Rep for ownership/edit checks — the real project's
 // opener if it's attached to one, or whoever it's assigned to for an ad hoc
@@ -21,6 +21,7 @@ export function BudgetLineRow({
   catalog,
   accountCodes,
   costCentres,
+  ictCategories,
   keys,
   projectTitleEditable,
   teamProjects,
@@ -37,6 +38,7 @@ export function BudgetLineRow({
   catalog: FundingSource[];
   accountCodes: AccountCode[];
   costCentres: CostCentreCode[];
+  ictCategories: IctExpenditureCategory[];
   keys: string[];
   // When true (Medium Term Projection > Budget Line Item), the Project Title
   // cell is a dropdown of `teamProjects` instead of plain text, letting the
@@ -268,13 +270,14 @@ export function BudgetLineRow({
       </td>
       <td className="px-2 py-2">
         {showItFields ? (
-          <input
-            className={cellInput}
-            value={line.ictExp}
-            disabled={!editable}
-            onChange={(e) => onLocalEdit({ ...line, ictExp: e.target.value })}
-            onBlur={(e) => patch({ ictExp: e.target.value })}
-          />
+          <select className={cellInput} value={line.ictExp} disabled={!editable} onChange={(e) => patch({ ictExp: e.target.value })}>
+            <option value="">—</option>
+            {ictCategories.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         ) : (
           <span className="text-xs text-slate-300">n/a</span>
         )}

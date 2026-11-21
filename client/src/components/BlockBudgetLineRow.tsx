@@ -3,7 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
 import { canApprove, canReject, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
-import type { AccountCode, BlockBudgetLineWithReferences, CostCentreCode, FundingEntry, FundingSource, Project, User } from '../types';
+import type { AccountCode, BlockBudgetLineWithReferences, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project, User } from '../types';
 
 // A line's owning Branch Rep for ownership/edit checks — mirrors
 // `ownerOf` in BudgetLineRow.tsx.
@@ -24,6 +24,7 @@ export function BlockBudgetLineRow({
   catalog,
   accountCodes,
   costCentres,
+  ictCategories,
   keys,
   revisedYearLabel,
   originalYearLabel,
@@ -41,6 +42,7 @@ export function BlockBudgetLineRow({
   catalog: FundingSource[];
   accountCodes: AccountCode[];
   costCentres: CostCentreCode[];
+  ictCategories: IctExpenditureCategory[];
   keys: string[];
   revisedYearLabel: string;
   originalYearLabel: string;
@@ -232,13 +234,14 @@ export function BlockBudgetLineRow({
       </td>
       <td className="px-2 py-2">
         {showItFields ? (
-          <input
-            className={cellInput}
-            value={line.ictExp}
-            disabled={!editable}
-            onChange={(e) => onLocalEdit({ ...line, ictExp: e.target.value })}
-            onBlur={(e) => patch({ ictExp: e.target.value })}
-          />
+          <select className={cellInput} value={line.ictExp} disabled={!editable} onChange={(e) => patch({ ictExp: e.target.value })}>
+            <option value="">—</option>
+            {ictCategories.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         ) : (
           <span className="text-xs text-slate-300">n/a</span>
         )}

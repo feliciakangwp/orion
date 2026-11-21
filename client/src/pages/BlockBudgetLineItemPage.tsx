@@ -13,6 +13,7 @@ import type {
   CostCentreCode,
   FundingEntry,
   FundingSource,
+  IctExpenditureCategory,
   Project,
 } from '../types';
 
@@ -32,6 +33,7 @@ export function BlockBudgetLineItemPage() {
   const [catalog, setCatalog] = useState<FundingSource[]>([]);
   const [accountCodes, setAccountCodes] = useState<AccountCode[]>([]);
   const [costCentres, setCostCentres] = useState<CostCentreCode[]>([]);
+  const [ictCategories, setIctCategories] = useState<IctExpenditureCategory[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
 
   function reload() {
@@ -44,6 +46,7 @@ export function BlockBudgetLineItemPage() {
     api.fundingCatalog.list().then(setCatalog);
     api.accountCodes.list().then(setAccountCodes);
     api.costCentres.list().then(setCostCentres);
+    api.ictExpenditureCategories.list().then(setIctCategories);
     api.budgetPeriods.list().then(setBudgetPeriods);
   }
   useEffect(reload, [currentUser?.id]);
@@ -149,6 +152,7 @@ export function BlockBudgetLineItemPage() {
                 catalog={catalog}
                 accountCodes={accountCodes}
                 costCentres={costCentres}
+                ictCategories={ictCategories}
                 keys={keys}
                 revisedYearLabel={revisedYearLabel}
                 originalYearLabel={originalYearLabel}

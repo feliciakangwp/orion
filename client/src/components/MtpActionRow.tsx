@@ -3,26 +3,30 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
 import { canApprove, canReject, userCanAct } from '../lib/workflow';
-import { ReassignPanel } from './ReassignPanel';
 import type { BudgetLine, Project } from '../types';
 
 // A row for an MTP action-queue tab (Review Phase / Approval Phase /
-// Clarification (FM)'s own turn) — shows the line and, when the acting
-// user can currently act on it, Approve/Reject buttons.
+// Clarification (FM)'s own turn) — shows the line, its Branch Rep/
+// Reviewer 1/Reviewer 2/Approver, and, when the acting user can currently
+// act on it, Approve/Reject buttons. Reassignment is a mass action on the
+// page itself (tick lines, then Reassign), not a per-row button here.
 export function MtpActionRow({
   line,
   project,
   periodEditable,
+  selected,
+  onToggleSelect,
   onUpdated,
 }: {
   line: BudgetLine;
   project: Project | null;
   periodEditable: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
   onUpdated: (line: BudgetLine) => void;
 }) {
   const { currentUser, users } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [showReassign, setShowReassign] = useState(false);
   const owner = project ? { openedByUserId: project.openedByUserId } : { openedByUserId: line.assignedToUserId };
   const canAct = (!!currentUser && userCanAct(line, currentUser, owner)) && periodEditable;
   const nameOf = (id: string | null) => (id ? users.find((u) => u.id === id)?.name ?? id : '—');
@@ -46,6 +50,11 @@ export function MtpActionRow({
 
   return (
     <tr>
+      {onToggleSelect && (
+        <td className="px-2 py-3">
+          <input type="checkbox" checked={!!selected} onChange={onToggleSelect} />
+        </td>
+      )}
       <td className="px-4 py-3">
         <StatusBadge status={line.status} />
         {error && <div className="mt-1 text-xs text-rose-600">{error}</div>}
@@ -55,6 +64,9 @@ export function MtpActionRow({
       <td className="px-4 py-3 text-sm text-slate-600">{line.account || '—'}</td>
       <td className="px-4 py-3 text-right text-sm font-medium text-slate-700">{currency(line.total)}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{nameOf(line.assignedToUserId)}</td>
+      <td className="px-4 py-3 text-sm text-slate-600">{nameOf(line.reviewer1UserId)}</td>
+      <td className="px-4 py-3 text-sm text-slate-600">{nameOf(line.reviewer2UserId)}</td>
+      <td className="px-4 py-3 text-sm text-slate-600">{nameOf(line.approverUserId)}</td>
       <td className="px-4 py-3 text-right">
         <div className="flex justify-end gap-2">
           {canAct && canApprove(line.step) && (
@@ -67,13 +79,7 @@ export function MtpActionRow({
               Reject
             </Button>
           )}
-          <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => setShowReassign(true)}>
-            Reassign
-          </Button>
         </div>
-        {showReassign && (
-          <ReassignPanel line={line} isAdHoc={line.projectId === null} onClose={() => setShowReassign(false)} onSaved={onUpdated} />
-        )}
       </td>
     </tr>
   );

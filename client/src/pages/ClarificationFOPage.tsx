@@ -50,7 +50,10 @@ function ClarificationFOContent({
               <th className="px-4 py-3">Description</th>
               <th className="px-4 py-3">Project Title</th>
               <th className="px-4 py-3 text-right">Total</th>
-              <th className="px-4 py-3">Assigned to</th>
+              <th className="px-4 py-3">Branch Rep</th>
+              <th className="px-4 py-3">Reviewer 1</th>
+              <th className="px-4 py-3">Reviewer 2</th>
+              <th className="px-4 py-3">Approver</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -63,11 +66,14 @@ function ClarificationFOContent({
                 <td className="px-4 py-3 text-sm text-slate-600">{projectOf(line.projectId)?.title || '—'}</td>
                 <td className="px-4 py-3 text-right text-sm font-medium text-slate-700">{currency(line.total)}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{nameOf(line.assignedToUserId)}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{nameOf(line.reviewer1UserId)}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{nameOf(line.reviewer2UserId)}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{nameOf(line.approverUserId)}</td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                   {emptyMessage}
                 </td>
               </tr>

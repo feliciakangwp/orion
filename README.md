@@ -471,12 +471,36 @@ so a path-based router would 404 on refresh of a deep link.)
   Submitting/approving still goes through — it's a warning for Branch Rep
   to raise a top-up or another AOR, not a block — and it clears the
   moment a new (even unconfirmed) AOR brings the pool back above spend.
-- **Reassign** (a button on every Budget Line Item row, in Review
-  Phase/Approval Phase too) lets anyone who can currently see the line —
-  not just its own Branch Rep — change its Reviewer 1, Reviewer 2,
-  Approver, or (ad hoc lines only) Branch Rep, regardless of the line's
-  workflow step. Reassigning a role away from yourself means you
-  naturally stop seeing that line afterward.
+- **Mass Submit / Mass Approve / Mass Reassign** — every Budget Line Item
+  row (per-project tab or cross-project page) and every Review Phase /
+  Approval Phase / Clarification (FM) action-queue row now shows a
+  checkbox, plus Branch Rep / Reviewer 1 / Reviewer 2 / Approver columns
+  (there's no more per-row Reassign button). Ticking one or more rows
+  reveals a toolbar:
+  - **Submit Selected** (Budget Line Item pages only) submits every
+    ticked line the acting Branch Rep owns.
+  - **Approve Selected** approves every ticked line the acting user
+    currently has a turn on.
+  - **Reassign Selected** opens a bulk modal listing every ticked line
+    side by side, each with its own Branch Rep (ad hoc lines only),
+    Reviewer 1, Reviewer 2, and Approver dropdowns, pre-filled with its
+    current values — change any of them and **Save All** applies every
+    row in one go.
+  A mixed batch (some lines the user isn't actually eligible to act on)
+  still processes whichever ones succeed; the rest are reported back as
+  a single error message rather than blocking the whole batch. Anyone
+  who can currently see a line — not just its own Branch Rep — can
+  reassign it, regardless of the line's workflow step; reassigning a
+  role away from yourself means you naturally stop seeing that line
+  afterward.
+- **Reviewer 2 is optional.** A line can be submitted with no Reviewer 2
+  at all — Clarification (FM)'s approval then skips Pending Approval
+  (Reviewer 2) entirely, going straight to CIO (IT project) or Approver.
+  Clearing Reviewer 2 back to "—" through Reassign means the same thing
+  going forward: if the line is sitting at Pending Approval (Reviewer 2)
+  at that exact moment, it auto-advances immediately (there'd otherwise
+  be no one left able to act on it); if it hasn't reached that step yet,
+  it naturally skips it once it does.
 - **Project visibility**: Project Profile, Project AOR, and a project's
   own AOR tab all follow the same rule as a budget line — Branch Rep only
   sees a project they opened or are a team member of; Finance (Officer,
@@ -770,9 +794,10 @@ so a path-based router would 404 on refresh of a deep link.)
   the same `fyOfDate` used everywhere else in the app), not calendar-year
   or days-remaining — consistent with how every other "this FY" concept
   in ORION is computed.
-- Reassign is available on every Budget Line Item row and on Review
-  Phase/Approval Phase's action-queue rows (where "pending action for
-  them" visibility already applies), gated server-side by the same
+- Reassign (now a mass action — tick lines, then Reassign Selected) is
+  available on every Budget Line Item row and on Review Phase/Approval
+  Phase/Clarification (FM)'s action-queue rows (where "pending action
+  for them" visibility already applies), gated server-side by the same
   `canSeeLine` check that already governs whether a line is visible to
   the acting user at all — there's no separate, narrower "who can
   reassign" permission, since by the spec's own wording ("accessed by
@@ -781,9 +806,24 @@ so a path-based router would 404 on refresh of a deep link.)
 - Reassigning the "Branch Rep" only changes anything for an **ad hoc**
   line (no Project Profile) — a project-attached line's Branch Rep is
   always the Project Profile's own opener (`isOwningBranchRep` is keyed
-  off the project, not the line), so Reassign only offers that control
-  for ad hoc lines; a project-attached line's Reassign panel offers just
+  off the project, not the line), so the bulk Reassign modal only offers
+  that control for ad hoc lines; a project-attached line's row in the
+  modal shows "follows Project Profile" instead and offers just
   Reviewer 1/2 and Approver.
+- Mass Submit/Approve process each ticked line independently (one
+  `try`/`catch` per line) rather than all-or-nothing, since a batch
+  ticked by one actor can legitimately contain lines they're not
+  actually the current turn for (e.g. ticking across several rows before
+  checking who's eligible) — the spec's "tick the lines they want to
+  send for review or for approver" reads as a convenience for acting on
+  many eligible lines at once, not a transaction that should fail
+  entirely over one ineligible line.
+- Making Reviewer 2 optional did **not** add a schema field — a line's
+  `reviewer2UserId` was already `string | null` from the original model,
+  so this round is purely workflow-engine and permission-check changes
+  (skip the step when null; auto-advance if it's cleared while a line is
+  sitting on it) plus the UI changes described above; no `orion.db`
+  version bump was needed.
 - Project Profile's own visibility fix (Branch Rep sees only projects
   they opened or are a team member of) was applied to the **listing**
   endpoints only (`projects.list`, used by Project Profile and Project

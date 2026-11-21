@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { BudgetLineRow } from '../components/BudgetLineRow';
+import { BulkReassignModal } from '../components/BulkReassignModal';
 import { Button, Card, StatusBadge } from '../components/ui';
 import { canActOnBudgetPeriod, effectiveBudgetPeriodStatus } from '../lib/budgetPeriod';
 import { hasInsufficientAorBalance } from '../lib/aor';
@@ -26,6 +27,9 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
   const [ictCategories, setIctCategories] = useState<IctExpenditureCategory[]>([]);
   const [budgetPeriods, setBudgetPeriods] = useState<BudgetPeriod[]>([]);
   const [aors, setAors] = useState<Aor[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkReassign, setShowBulkReassign] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   function reload() {
     api.budgetLines.listByKinds([kind]).then(setLines);
@@ -101,6 +105,32 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
     setLines((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
   }
 
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const selectedLines = lines.filter((l) => selectedIds.has(l.id));
+
+  async function massAct(action: 'submit' | 'approve') {
+    setBulkError(null);
+    const failures: string[] = [];
+    for (const line of selectedLines) {
+      try {
+        const updated = action === 'submit' ? await api.budgetLines.submit(line.id) : await api.budgetLines.approve(line.id);
+        updateLocal(updated);
+      } catch (e) {
+        failures.push(`${line.description || line.id}: ${(e as Error).message}`);
+      }
+    }
+    setSelectedIds(new Set());
+    if (failures.length > 0) setBulkError(failures.join('; '));
+  }
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -128,11 +158,31 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
         that project&rsquo;s own tab.
       </p>
 
+      {selectedIds.size > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded border border-indigo-100 bg-indigo-50 px-3 py-2">
+          <span className="text-xs font-medium text-indigo-700">{selectedIds.size} line{selectedIds.size === 1 ? '' : 's'} selected</span>
+          <Button className="!px-2 !py-1 text-xs" onClick={() => massAct('submit')}>
+            Submit Selected
+          </Button>
+          <Button className="!px-2 !py-1 text-xs" variant="secondary" onClick={() => massAct('approve')}>
+            Approve Selected
+          </Button>
+          <Button className="!px-2 !py-1 text-xs" variant="secondary" onClick={() => setShowBulkReassign(true)}>
+            Reassign Selected
+          </Button>
+          <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
+      {bulkError && <p className="mb-2 text-xs text-rose-600">{bulkError}</p>}
+
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[1900px] text-left text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Status</th>
+              <th className="sticky left-0 z-10 bg-slate-50 px-2 py-2"></th>
+              <th className="sticky left-[2.5rem] z-10 bg-slate-50 px-3 py-2">Status</th>
               <th className="px-2 py-2">Submission Year</th>
               <th className="px-2 py-2">Description</th>
               <th className="px-2 py-2">Project Title</th>
@@ -155,7 +205,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
                   {k}
                 </th>
               ))}
-              <th className="px-2 py-2">Assigned to</th>
+              <th className="px-2 py-2">Branch Rep</th>
               <th className="px-2 py-2">Reviewer 1</th>
               <th className="px-2 py-2">Reviewer 2</th>
               <th className="px-2 py-2">Approver</th>
@@ -179,6 +229,8 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
                 teamProjects={teamProjects}
                 periodEditable={periodEditable}
                 insufficientAorBalance={insufficientByLineId.get(line.id) ?? false}
+                selected={selectedIds.has(line.id)}
+                onToggleSelect={() => toggleSelect(line.id)}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
                 onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}
@@ -186,7 +238,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
             ))}
             {lines.length === 0 && (
               <tr>
-                <td colSpan={24} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={25} className="px-4 py-8 text-center text-slate-400">
                   No {title} lines visible to you yet.
                 </td>
               </tr>
@@ -194,6 +246,17 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
           </tbody>
         </table>
       </Card>
+      {showBulkReassign && (
+        <BulkReassignModal
+          lines={selectedLines}
+          onClose={() => setShowBulkReassign(false)}
+          onSaved={(updated) => {
+            updated.forEach(updateLocal);
+            setSelectedIds(new Set());
+            setShowBulkReassign(false);
+          }}
+        />
+      )}
     </div>
   );
 }

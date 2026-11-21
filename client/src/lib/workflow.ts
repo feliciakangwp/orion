@@ -48,7 +48,16 @@ export function canApprove(step: WorkflowStep): boolean {
   return step in APPROVE_NEXT || step === 'PENDING_APPROVAL_REVIEWER2';
 }
 
-export function nextOnApprove(step: WorkflowStep, itProject: YesNo | ''): WorkflowStep {
+// Reviewer 2 is optional: a line with no Reviewer 2 assigned skips
+// Pending Approval (Reviewer 2) entirely, going straight from
+// Clarification (FM) to CIO/Approver, exactly as if it had already
+// cleared that step. `reviewer2UserId` must always be passed explicitly
+// (never defaulted) so a caller can't accidentally skip the step for a
+// line that does have one.
+export function nextOnApprove(step: WorkflowStep, itProject: YesNo | '', reviewer2UserId: string | null): WorkflowStep {
+  if (step === 'CLARIFICATION_FM' && !reviewer2UserId) {
+    return itProject === 'Yes' ? 'PENDING_APPROVAL_CIO' : 'PENDING_APPROVAL_APPROVER';
+  }
   if (step === 'PENDING_APPROVAL_REVIEWER2') return itProject === 'Yes' ? 'PENDING_APPROVAL_CIO' : 'PENDING_APPROVAL_APPROVER';
   const next = APPROVE_NEXT[step];
   if (!next) throw new Error(`No approval transition from step ${step}`);

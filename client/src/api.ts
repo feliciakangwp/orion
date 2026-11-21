@@ -1328,6 +1328,16 @@ export const api = {
           line.reviewer2UserId = data.reviewer2UserId ?? null;
         }
         if ('approverUserId' in data) line.approverUserId = data.approverUserId ?? null;
+        // Reviewer 2 is optional — if a line is sitting at Pending Approval
+        // (Reviewer 2) and reviewer2UserId was just cleared, there's no one
+        // left to act on that step, so skip it immediately (same branching
+        // nextOnApprove already does when Clarification (FM) first reaches
+        // this point with no Reviewer 2 at all).
+        if (line.step === 'PENDING_APPROVAL_REVIEWER2' && !line.reviewer2UserId) {
+          const from = line.step;
+          line.step = nextOnApprove(line.step, line.itProject, line.reviewer2UserId);
+          pushHistory(line, user.id, 'reassign', from, line.step, 'Reviewer 2 removed — step skipped');
+        }
         line.updatedAt = now();
         saveDb();
         return withComputed(line);
@@ -1358,8 +1368,8 @@ export const api = {
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can submit this line');
         if (!canSubmit(line.step)) throw new Error('This line cannot be submitted from its current status');
         requireBudgetPeriodEditable(line.kind, user);
-        if (!line.reviewer1UserId || !line.reviewer2UserId || !line.approverUserId) {
-          throw new Error('Reviewer 1, Reviewer 2 and Approver must all be selected before submitting');
+        if (!line.reviewer1UserId || !line.approverUserId) {
+          throw new Error('Reviewer 1 and Approver must be selected before submitting');
         }
         if (line.kind === 'MTP' && !justificationSatisfied(line, getInflationRates())) {
           throw new Error('This line has a variance requiring an MTP Variance justification before it can be submitted');
@@ -1394,7 +1404,7 @@ export const api = {
           line.financeOfficerUserId = user.id;
         }
         const from = line.step;
-        line.step = nextOnApprove(line.step, line.itProject);
+        line.step = nextOnApprove(line.step, line.itProject, line.reviewer2UserId);
         pushHistory(line, user.id, 'approve', from, line.step);
         line.updatedAt = now();
         if (line.step === 'APPROVED') {

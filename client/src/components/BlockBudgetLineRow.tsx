@@ -3,7 +3,6 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { Button, currency, StatusBadge } from './ui';
 import { canApprove, canReject, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
-import { ReassignPanel } from './ReassignPanel';
 import type { AccountCode, BlockBudgetLineWithReferences, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project, User } from '../types';
 
 // A line's owning Branch Rep for ownership/edit checks — mirrors
@@ -32,6 +31,8 @@ export function BlockBudgetLineRow({
   projectTitleEditable,
   teamProjects,
   periodEditable,
+  selected,
+  onToggleSelect,
   onLocalEdit,
   onServerUpdate,
   onRemoved,
@@ -50,6 +51,11 @@ export function BlockBudgetLineRow({
   projectTitleEditable?: boolean;
   teamProjects?: Project[];
   periodEditable: boolean;
+  // When provided, a checkbox cell is rendered first for mass
+  // Submit/Approve/Reassign — selection state and the toolbar that acts
+  // on it both live in the parent page.
+  selected?: boolean;
+  onToggleSelect?: () => void;
   onLocalEdit: (line: BlockBudgetLineWithReferences) => void;
   onServerUpdate: (line: BlockBudgetLineWithReferences) => void;
   onRemoved: (id: string) => void;
@@ -57,7 +63,6 @@ export function BlockBudgetLineRow({
 }) {
   const { currentUser, users, simulationYear } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [showReassign, setShowReassign] = useState(false);
   const owner = ownerOf(line, project);
   const isBranchRepOwner = !!currentUser && isOwningBranchRep(currentUser, owner);
   const editable = isBranchRepOwner && isEditableByBranchRep(line.step) && periodEditable;
@@ -133,7 +138,12 @@ export function BlockBudgetLineRow({
 
   return (
     <tr className="align-top">
-      <td className="sticky left-0 z-10 bg-white px-3 py-2">
+      {onToggleSelect && (
+        <td className="sticky left-0 z-10 bg-white px-2 py-2">
+          <input type="checkbox" checked={!!selected} onChange={onToggleSelect} />
+        </td>
+      )}
+      <td className={`sticky z-10 bg-white px-3 py-2 ${onToggleSelect ? 'left-[2.5rem]' : 'left-0'}`}>
         <StatusBadge status={line.status} />
         {error && <div className="mt-1 max-w-[10rem] text-[10px] text-rose-600">{error}</div>}
       </td>
@@ -352,18 +362,7 @@ export function BlockBudgetLineRow({
               Delete
             </Button>
           )}
-          <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => setShowReassign(true)}>
-            Reassign
-          </Button>
         </div>
-        {showReassign && (
-          <ReassignPanel
-            line={line}
-            isAdHoc={line.projectId === null}
-            onClose={() => setShowReassign(false)}
-            onSaved={(updated) => onServerUpdate({ ...line, ...updated })}
-          />
-        )}
       </td>
     </tr>
   );

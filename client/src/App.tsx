@@ -23,6 +23,7 @@ import { MtpVariancePage } from './pages/MtpVariancePage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectAorDetailPage } from './pages/ProjectAorDetailPage';
 import { ProjectAorListPage } from './pages/ProjectAorListPage';
+import { ProjectFundingPotPage } from './pages/ProjectFundingPotPage';
 import { ProjectProfileList } from './pages/ProjectProfileList';
 import { ProjectProfileRequestPage } from './pages/ProjectProfileRequestPage';
 import { ReviewPhasePage } from './pages/ReviewPhasePage';
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/projects/requests" element={<ProjectProfileRequestPage />} />
         <Route path="/projects/aor" element={<ProjectAorListPage />} />
         <Route path="/projects/aor/:id" element={<ProjectAorDetailPage />} />
+        <Route path="/projects/funding-pot" element={<ProjectFundingPotPage />} />
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
         <Route path="/mtp/budget-line-item" element={<BudgetLineItemPage />} />
         <Route path="/mtp/variance" element={<MtpVariancePage />} />

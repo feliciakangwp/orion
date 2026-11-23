@@ -145,6 +145,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <NavItem to="/projects/aor" onNavigate={onNavigate}>
             Project AOR
           </NavItem>
+          <NavItem to="/projects/funding-pot" onNavigate={onNavigate}>
+            Project Funding Pot
+          </NavItem>
         </NavSection>
 
         <NavSection label="Medium Term Projection">

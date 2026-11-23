@@ -84,27 +84,67 @@ etc. are stored in **that browser's `localStorage`**, under the key
   local store on demand — this is also how to get a clean Project Profile
   slate if you've been testing.
 - Right below it, **"Load Sample Data"** wipes and reseeds the local store
-  too, then builds a demo dataset on top of it: two Project Profiles (one
-  IT, one not), a confirmed AOR, and five Medium Term Projection lines —
-  one ad hoc (no Project Profile), one in a second project, the rest in
-  the first — carried at various stages (two fully Approved, one at
-  Clarification (FO), one at Review, one still Draft) through Annual
-  Budget (Original Budget bootstrapped straight from Medium Term
-  Projection) and Block Budget (rolled forward from Medium Term
-  Projection), so the MTP → Annual Budget → Block Budget linkage, the AOR
-  knock-off/insufficient-balance highlight, the Reviewer 2 skip, and the
-  CIO-vs-Approver IT-project branch are all visibly populated and ready to
-  explore. It's built by actually driving the real engine functions
+  too, then builds a rich demo dataset on top of it so every tab has
+  something real to look at and act on:
+  - **Three Project Profiles**: two Active (one IT — "Trade Declaration
+    System Enhancement" — one not — "Checkpoint Scanner Replacement") and
+    one still **Pending** ("Border Checkpoint CCTV Upgrade"), populating
+    the **Project Profile Request** queue.
+  - **AOR**: the IT project has two (a confirmed one plus a later,
+    still-unconfirmed top-up — "+Add" and a live "Finance Confirmed"
+    action to try); the other Active project has one, also unconfirmed
+    and smaller than what it ends up spending — AOR knock-off pools
+    confirmed and unconfirmed funds alike, so both still drive the
+    Insufficient AOR Balance highlight on their Original Budget lines.
+  - **Project Funding Pot**: both Active projects' Source of Funding
+    entries are promoted to an Approved catalog source and given real pot
+    details (ID, Supported Fund, External Fund dates), so the page shows
+    real FY-by-FY drawdown and a Funding Pot Balance — one of them
+    negative, since its Original Budget spend outgrew its Supported Fund.
+  - **Seven Medium Term Projection lines** across the two Active projects
+    plus one ad hoc (no Project Profile), carried to seven different
+    workflow stages — two fully Approved (one via the plain
+    Reviewer-2-present path, one via the Reviewer-2-skip path), one each
+    sitting at Clarification (FO), Clarification (FM), Review, and
+    Pending Approval (Reviewer 2), and one still Draft — plus one line
+    tagged to the generic Inactive "SMGT" placeholder user, populating
+    "with Inactive Users" on all three exercises (see below).
+  - **Two Annual Budget cycles**, so Revised Budget has real rows too
+    (empty on a lone first cycle is correct, not a bug, but isn't much to
+    look at) — cycle 1 bootstraps Original Budget straight from Medium
+    Term Projection and carries one line to Approved and one to
+    Clarification (FO); cycle 2 (after a real `resetToDraft` +
+    `open()`, exactly as Finance Admin would do it) duplicates cycle 1's
+    Original Budget into this cycle's Revised Budget and bootstraps a
+    fresh Original Budget from Medium Term Projection's now-updated
+    figures, again carrying one line each to Approved and Clarification
+    (FO) in both Revised and Original Budget.
+  - **Block Budget**, rolled forward from Medium Term Projection's
+    current (twice flowed-back) figures, with the same Approved/
+    Clarification (FO)/Draft spread.
+  - **One exercise ends Open** (Medium Term Projection — its pending
+    lines and Draft line are all genuinely actionable/editable right
+    away) **and the other two end Closed and Locked** (Annual Budget from
+    its own real `lock()` call; Block Budget by the same direct period
+    mutation its rollover already needed — see below) with real,
+    read-only data, matching a steady-state demo rather than a blank
+    exercise someone has to open themselves first.
+
+  It's built by actually driving the real engine functions
   (`rollAnnualBudgetForward`, `flowOriginalBudgetIntoMtp`,
-  `rollBlockBudgetForward`, and the same `submit`/`approve`/`update` calls
-  the UI itself uses) rather than hand-written records, so every linkage
-  matches the rules those functions already enforce — see
-  `loadSampleData()` in `client/src/api.ts` for the exact script and the
-  one deliberate exception (Block Budget's own exercise period is left at
-  Draft with just its Start Year set, since Annual Budget's cycle has to
-  stay non-Draft for its own lines to stay visible — see
-  `belongsToCurrentCycle` — and the two can't both be non-Draft through
-  the real `open()` action's own mutual-exclusivity rule).
+  `rollBlockBudgetForward`, and the same `submit`/`approve`/`update`/
+  `open`/`lock`/`resetToDraft` calls the UI itself uses) rather than
+  hand-written records, so every linkage matches the rules those
+  functions already enforce — see `loadSampleData()` in
+  `client/src/api.ts` for the exact script and its one deliberate
+  exception: Block Budget's rollover is called directly (bypassing the
+  real `open()` action's requirement that every *other* exercise be
+  Draft at that moment) since Annual Budget's cycle 2 has to stay
+  non-Draft for its own lines to stay visible (see
+  `belongsToCurrentCycle`), and the two can't both be non-Draft through
+  `open()` itself. Block Budget's own exercise period is then bypassed
+  the same way, straight to Closed and Locked with a real Start/End Date,
+  rather than lingering at Draft.
 - Nothing above is automatic: a fresh browser (or either of these two
   buttons) only ever produces what that button documents — every existing
   Playwright regression test assumes a truly blank slate on first load, so
@@ -497,6 +537,27 @@ so a path-based router would 404 on refresh of a deep link.)
   Submitting/approving still goes through — it's a warning for Branch Rep
   to raise a top-up or another AOR, not a block — and it clears the
   moment a new (even unconfirmed) AOR brings the pool back above spend.
+- **Project Funding Pot** (sidebar: Project Profile → Project Funding
+  Pot) lists every Source of Funding entry across every visible Project
+  Profile — one row per entry (a project with more than one Source of
+  Funding pick shows more than one row) — with **Funding Pot ID**,
+  **Status** (**Active**/**Closed**/**Expired**, computed the same way
+  as AOR's own status: Closed once its Funding Pot Balance reaches zero,
+  Expired once its External Fund End Date has passed, Active otherwise),
+  **Project Title**, **Source of Funding**, **External Fund Start/End
+  Date**, **Supported Fund**, **Funding Pot Balance** (Supported Fund
+  minus Total Budget Drawn Down), **Total Budget Drawn Down**, and one
+  column per FY that has ever had an Original Budget. Each FY column —
+  and so the Total/Balance too — is that **project's** total Original
+  Budget for that FY (summed across every line, every cycle, the same
+  "lifetime ledger" `listAllForProject` already powers for the
+  insufficient-balance check above), not scoped to the specific line(s)
+  that happened to tag this particular funding entry — same pooled,
+  project-level approach as the AOR knock-off, for the same reason (the
+  spec asks for "the total Original Budget of the Project profile," and
+  a project's Original Budget spend draws against its funding sources
+  collectively, not line-by-line against whichever pot it happened to be
+  tagged to).
 - **Mass Submit / Mass Approve / Mass Reassign** — every Budget Line Item
   row (per-project tab or cross-project page) and every Review Phase /
   Approval Phase / Clarification (FM) action-queue row now shows a
@@ -865,15 +926,49 @@ so a path-based router would 404 on refresh of a deep link.)
   permission-gated `api.budgetPeriods.open('BLOCK', ...)` action (which
   demands Medium Term Projection *and* Annual Budget both be Draft at
   that moment — impossible once Annual Budget is deliberately kept
-  Locked so its own Original/Revised Budget lines stay visible), it calls
-  the exact same internal rollover function that action would have
-  called, directly — never a hand-written substitute — and leaves Block
-  Budget's own exercise period at Draft with just its Start Year set, a
-  state Finance Admin can reach for real too (`setBlockBudgetStartYear`
-  has no such cross-exercise restriction) and can finish from at any time
-  by clicking Open — which would just re-run the identical rollover
-  (confirmed idempotent: it updates each existing Block line in place
-  rather than duplicating it).
+  non-Draft so its own Original/Revised Budget lines stay visible), it
+  calls the exact same internal rollover function that action would have
+  called, directly — never a hand-written substitute — and then bakes
+  Block Budget's own exercise period straight to Closed and Locked with
+  a real Start/End Date the same direct way (confirmed safe: a real
+  Finance Admin re-running the rollover later, e.g. by Resetting to
+  Draft and clicking Open for real, would just update each existing
+  Block line in place, never duplicate it).
+- Exactly one exercise (Medium Term Projection) ends "Load Sample Data"
+  Open and the other two Closed and Locked, rather than all three Open
+  or all three Locked, because that's the only combination that leaves
+  *all three* genuinely showing real data: Annual Budget's Original/
+  Revised Budget only stay visible while its own period is non-Draft
+  (see `belongsToCurrentCycle`), and the real `open()` action refuses to
+  open a second exercise while any other is already non-Draft — so
+  Annual Budget and Block Budget can never both be "freshly opened" in
+  the same live session, only reached one after the other, each only
+  staying visible by staying non-Draft once reached. Medium Term
+  Projection has no such restriction (`belongsToCurrentCycle` never
+  filters it), so it's the one left Open rather than Locked, so its
+  pending lines and Draft line stay genuinely actionable/editable for
+  a visitor to try immediately rather than all three exercises reading
+  as finished history.
+- Project 2's own AOR (Development 50,000 / Operating 30,000) and the
+  Development-only top-up on Project 1's AOR (30,000) are sized to stay
+  smaller than what their Original Budget lines actually spend, on
+  purpose — demonstrates the Insufficient AOR Balance highlight staying
+  intact (and, for Project 1's Operating fund, a contrasting *sufficient*
+  case) even once a real AOR exists and even after a top-up, since the
+  check pools every AOR for the project regardless of Finance Confirmed
+  status.
+- The generic, one-per-group placeholder Users (each named after their
+  own group, e.g. "SMGT") are seeded Inactive specifically so something
+  already exists to populate every "with Inactive Users" cleanup page
+  without inventing a new, otherwise-pointless Inactive User —
+  `loadSampleData()` tags one line each on Medium Term Projection,
+  Annual Budget, and Block Budget to the "SMGT" placeholder. For Annual
+  Budget specifically, the tag goes on the *Revised* Budget line from
+  cycle 2, not that line's Original Budget counterpart from cycle 1 —
+  tagging the latter would work at the time, but the moment cycle 2
+  opens, cycle 1's Original Budget stops being "the current cycle" (see
+  `belongsToCurrentCycle` again) and disappears from every Annual Budget
+  listing, taking the demo with it.
 - An Original Budget/Revised Budget line inherits Medium Term
   Projection's own Recurring flag on bootstrap (same field, same
   record-construction code as every other catalog field it carries
@@ -888,3 +983,24 @@ so a path-based router would 404 on refresh of a deep link.)
   switching Recurring off before setting an Original Budget line's own
   monthly figures, exactly as a real Branch Rep editing one would need
   to.
+- Project Funding Pot's **Status** column (Active/Closed/Expired) isn't
+  specified by name in the spec, so it reuses AOR's own status model
+  rather than inventing a different one: Closed once the Funding Pot
+  Balance reaches zero (or below — a pot can go negative, since nothing
+  in the spec caps draw-down at the Supported Fund, and a negative
+  balance is itself useful information, not an error state to hide),
+  Expired once its External Fund End Date has passed, Active otherwise.
+- Project Funding Pot shows **one row per Source of Funding entry**, not
+  one per project, since Funding Pot ID/Source of Funding/Supported
+  Fund/the External Fund dates are all per-entry fields — a project with
+  more than one entry (more than one pot) shows more than one row, each
+  with the *same* FY/Total Drawn Down/Balance figures, since the
+  draw-down itself is pooled at the project level (see the Feature map
+  entry above) rather than split by which specific entry a budget line's
+  own `fundingEntryId` happens to point to.
+- The FY columns shown are the union of every FY any visible project has
+  ever had an Original Budget for — not, say, a fixed recent window —
+  since different projects' Annual Budget history can start in different
+  FYs and the page has no natural "current FY" of its own to center on
+  (unlike Medium Term Projection/Block Budget, which each have exactly
+  one active window).

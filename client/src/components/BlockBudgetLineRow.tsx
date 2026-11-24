@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
-import { Button, currency, StatusBadge } from './ui';
-import { canApprove, canReject, canSubmit, isEditableByBranchRep, isOwningBranchRep, userCanAct } from '../lib/workflow';
+import { currency, StatusBadge } from './ui';
+import { isEditableByBranchRep, isOwningBranchRep } from '../lib/workflow';
 import type { AccountCode, BlockBudgetLineWithReferences, CostCentreCode, FundingEntry, FundingSource, IctExpenditureCategory, Project, User } from '../types';
 
 // A line's owning Branch Rep for ownership/edit checks — mirrors
@@ -35,7 +35,6 @@ export function BlockBudgetLineRow({
   onToggleSelect,
   onLocalEdit,
   onServerUpdate,
-  onRemoved,
   onProjectAttach,
 }: {
   line: BlockBudgetLineWithReferences;
@@ -58,7 +57,6 @@ export function BlockBudgetLineRow({
   onToggleSelect?: () => void;
   onLocalEdit: (line: BlockBudgetLineWithReferences) => void;
   onServerUpdate: (line: BlockBudgetLineWithReferences) => void;
-  onRemoved: (id: string) => void;
   onProjectAttach?: (line: BlockBudgetLineWithReferences) => void;
 }) {
   const { currentUser, users, simulationYear } = useAuth();
@@ -66,7 +64,6 @@ export function BlockBudgetLineRow({
   const owner = ownerOf(line, project);
   const isBranchRepOwner = !!currentUser && isOwningBranchRep(currentUser, owner);
   const editable = isBranchRepOwner && isEditableByBranchRep(line.step) && periodEditable;
-  const canAct = (currentUser ? userCanAct(line, currentUser, owner) : false) && periodEditable;
   const showItFields = line.itProject === 'Yes';
 
   const reviewerOptions = users.filter((u) => u.groups.includes('DY Head') || u.groups.includes('Head'));
@@ -91,38 +88,6 @@ export function BlockBudgetLineRow({
   async function setPeriod(key: string, value: number) {
     await patch({ periods: { ...line.periods, [key]: value } });
   }
-  async function submit() {
-    setError(null);
-    try {
-      const updated = await api.budgetLines.submit(line.id);
-      onServerUpdate({ ...line, ...updated });
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  async function approve() {
-    setError(null);
-    try {
-      const updated = await api.budgetLines.approve(line.id);
-      onServerUpdate({ ...line, ...updated });
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  async function reject() {
-    setError(null);
-    try {
-      const updated = await api.budgetLines.reject(line.id);
-      onServerUpdate({ ...line, ...updated });
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  async function remove() {
-    if (!confirm('Delete this line?')) return;
-    await api.budgetLines.remove(line.id);
-    onRemoved(line.id);
-  }
   async function attachProject(projectId: string) {
     setError(null);
     try {
@@ -138,14 +103,14 @@ export function BlockBudgetLineRow({
 
   return (
     <tr className="align-top">
-      {onToggleSelect && (
-        <td className="sticky left-0 z-10 bg-white px-2 py-2">
-          <input type="checkbox" checked={!!selected} onChange={onToggleSelect} />
-        </td>
-      )}
-      <td className={`sticky z-10 bg-white px-3 py-2 ${onToggleSelect ? 'left-[2.5rem]' : 'left-0'}`}>
-        <StatusBadge status={line.status} />
-        {error && <div className="mt-1 max-w-[10rem] text-[10px] text-rose-600">{error}</div>}
+      <td className="sticky left-0 z-10 bg-white px-3 py-2">
+        <div className="flex items-start gap-2">
+          {onToggleSelect && <input type="checkbox" className="mt-0.5" checked={!!selected} onChange={onToggleSelect} />}
+          <div>
+            <StatusBadge status={line.status} />
+            {error && <div className="mt-1 max-w-[10rem] text-[10px] text-rose-600">{error}</div>}
+          </div>
+        </div>
       </td>
       <td className="px-2 py-2">
         <textarea
@@ -339,30 +304,6 @@ export function BlockBudgetLineRow({
             </option>
           ))}
         </select>
-      </td>
-      <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-2 py-2">
-        <div className="flex flex-col gap-1">
-          {isBranchRepOwner && periodEditable && canSubmit(line.step) && (
-            <Button className="!px-2 !py-1 text-xs" onClick={submit}>
-              Submit
-            </Button>
-          )}
-          {canAct && canApprove(line.step) && (
-            <Button className="!px-2 !py-1 text-xs" variant="secondary" onClick={approve}>
-              Approve
-            </Button>
-          )}
-          {canAct && canReject(line.step) && (
-            <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={reject}>
-              Reject
-            </Button>
-          )}
-          {isBranchRepOwner && periodEditable && line.step === 'DRAFT' && (
-            <Button className="!px-2 !py-1 text-xs" variant="danger" onClick={remove}>
-              Delete
-            </Button>
-          )}
-        </div>
       </td>
     </tr>
   );

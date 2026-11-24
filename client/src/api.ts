@@ -1437,7 +1437,12 @@ export const api = {
         if (!line) throw new Error('Not found');
         const project = owningProjectOf(line);
         if (!isOwningBranchRep(user, project)) throw new Error('Only the owning Branch Rep can delete this line');
-        if (line.step !== 'DRAFT') throw new Error('Only lines still in Draft can be deleted');
+        // Only a line that's never been submitted (no history yet — see
+        // statusFor's 'New' vs 'Draft' split) can be deleted. One that's
+        // already been through the workflow and returned to Draft (a
+        // reject or a Return) has reviewer/approver history attached to
+        // it and can only be edited from here, not removed outright.
+        if (line.history.length > 0) throw new Error('Only a line still marked New (never submitted) can be deleted');
         requireBudgetPeriodEditable(line.kind, user);
         db.budgetLines = db.budgetLines.filter((l) => l.id !== id);
         saveDb();

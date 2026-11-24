@@ -13,7 +13,14 @@ export const STEP_STATUS: Record<WorkflowStep, BudgetLineStatus> = {
   APPROVED: 'Approved',
 };
 
-export function statusFor(line: Pick<BudgetLine, 'step'>): BudgetLineStatus {
+// A line that has never been submitted (no history yet) shows as 'New'
+// rather than 'Draft', even though it's still on the same DRAFT step —
+// this is also what gates whether it can be deleted (see
+// budgetLines.remove() in api.ts): a line that's already been through the
+// workflow once (rejected or Returned back to Draft) keeps its history, so
+// it reads 'Draft' and can no longer be deleted, only edited.
+export function statusFor(line: Pick<BudgetLine, 'step' | 'history'>): BudgetLineStatus {
+  if (line.step === 'DRAFT' && line.history.length === 0) return 'New';
   return STEP_STATUS[line.step];
 }
 

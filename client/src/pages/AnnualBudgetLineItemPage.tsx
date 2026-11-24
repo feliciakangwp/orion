@@ -116,16 +116,27 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
 
   const selectedLines = lines.filter((l) => selectedIds.has(l.id));
 
-  async function massAct(action: 'submit' | 'approve') {
+  async function massAct(action: 'submit' | 'approve' | 'reject' | 'delete') {
     setBulkError(null);
     const failures: string[] = [];
+    const deletedIds: string[] = [];
     for (const line of selectedLines) {
       try {
-        const updated = action === 'submit' ? await api.budgetLines.submit(line.id) : await api.budgetLines.approve(line.id);
-        updateLocal(updated);
+        if (action === 'delete') {
+          await api.budgetLines.remove(line.id);
+          deletedIds.push(line.id);
+        } else {
+          const updated =
+            action === 'submit' ? await api.budgetLines.submit(line.id) : action === 'approve' ? await api.budgetLines.approve(line.id) : await api.budgetLines.reject(line.id);
+          updateLocal(updated);
+        }
       } catch (e) {
         failures.push(`${line.description || line.id}: ${(e as Error).message}`);
       }
+    }
+    if (deletedIds.length > 0) {
+      const deleted = new Set(deletedIds);
+      setLines((prev) => prev.filter((l) => !deleted.has(l.id)));
     }
     setSelectedIds(new Set());
     if (failures.length > 0) setBulkError(failures.join('; '));
@@ -167,8 +178,22 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
           <Button className="!px-2 !py-1 text-xs" variant="secondary" onClick={() => massAct('approve')}>
             Approve Selected
           </Button>
+          <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => massAct('reject')}>
+            Reject Selected
+          </Button>
           <Button className="!px-2 !py-1 text-xs" variant="secondary" onClick={() => setShowBulkReassign(true)}>
             Reassign Selected
+          </Button>
+          <Button
+            className="!px-2 !py-1 text-xs"
+            variant="danger"
+            onClick={() => {
+              if (confirm(`Delete ${selectedIds.size} line${selectedIds.size === 1 ? '' : 's'}? Only lines still marked New can actually be removed.`)) {
+                massAct('delete');
+              }
+            }}
+          >
+            Delete Selected
           </Button>
           <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => setSelectedIds(new Set())}>
             Clear
@@ -181,8 +206,7 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
         <table className="w-full min-w-[1900px] text-left text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="sticky left-0 z-10 bg-slate-50 px-2 py-2"></th>
-              <th className="sticky left-[2.5rem] z-10 bg-slate-50 px-3 py-2">Status</th>
+              <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Status</th>
               <th className="px-2 py-2">Submission Year</th>
               <th className="px-2 py-2">Description</th>
               <th className="px-2 py-2">Project Title</th>
@@ -210,7 +234,6 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
               <th className="px-2 py-2">Reviewer 2</th>
               <th className="px-2 py-2">Approver</th>
               <th className="px-2 py-2">Finance Officer</th>
-              <th className="sticky right-0 z-10 bg-slate-50 px-2 py-2">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -233,12 +256,11 @@ function AnnualBudgetLineItemContent({ kind, title }: { kind: 'RB' | 'OB'; title
                 onToggleSelect={() => toggleSelect(line.id)}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
-                onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}
               />
             ))}
             {lines.length === 0 && (
               <tr>
-                <td colSpan={25} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={23} className="px-4 py-8 text-center text-slate-400">
                   No {title} lines visible to you yet.
                 </td>
               </tr>

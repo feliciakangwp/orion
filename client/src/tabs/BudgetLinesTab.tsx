@@ -108,21 +108,34 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
 
   const selectedLines = lines.filter((l) => selectedIds.has(l.id));
 
-  // Mass Submit/Approve: tick any lines, then act on all of them at once.
-  // Each line is attempted independently — a mixed batch (some the current
-  // user isn't actually eligible to act on) still processes whichever
-  // lines succeed, reporting the rest as failures rather than blocking
-  // the whole batch.
-  async function massAct(action: 'submit' | 'approve') {
+  // Mass Submit/Approve/Reject/Delete: tick any lines, then act on all of
+  // them at once from the toolbar above the table — there's no per-row
+  // action button any more. Each line is attempted independently — a
+  // mixed batch (some the current user isn't actually eligible to act on,
+  // or that Delete refuses because they're not still New) still processes
+  // whichever lines succeed, reporting the rest as failures rather than
+  // blocking the whole batch.
+  async function massAct(action: 'submit' | 'approve' | 'reject' | 'delete') {
     setBulkError(null);
     const failures: string[] = [];
+    const deletedIds: string[] = [];
     for (const line of selectedLines) {
       try {
-        const updated = action === 'submit' ? await api.budgetLines.submit(line.id) : await api.budgetLines.approve(line.id);
-        updateLocal(updated);
+        if (action === 'delete') {
+          await api.budgetLines.remove(line.id);
+          deletedIds.push(line.id);
+        } else {
+          const updated =
+            action === 'submit' ? await api.budgetLines.submit(line.id) : action === 'approve' ? await api.budgetLines.approve(line.id) : await api.budgetLines.reject(line.id);
+          updateLocal(updated);
+        }
       } catch (e) {
         failures.push(`${line.description || line.id}: ${(e as Error).message}`);
       }
+    }
+    if (deletedIds.length > 0) {
+      const deleted = new Set(deletedIds);
+      setLines((prev) => prev.filter((l) => !deleted.has(l.id)));
     }
     setSelectedIds(new Set());
     if (failures.length > 0) setBulkError(failures.join('; '));
@@ -162,8 +175,22 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
           <Button className="!px-2 !py-1 text-xs" variant="secondary" onClick={() => massAct('approve')}>
             Approve Selected
           </Button>
+          <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => massAct('reject')}>
+            Reject Selected
+          </Button>
           <Button className="!px-2 !py-1 text-xs" variant="secondary" onClick={() => setShowBulkReassign(true)}>
             Reassign Selected
+          </Button>
+          <Button
+            className="!px-2 !py-1 text-xs"
+            variant="danger"
+            onClick={() => {
+              if (confirm(`Delete ${selectedIds.size} line${selectedIds.size === 1 ? '' : 's'}? Only lines still marked New can actually be removed.`)) {
+                massAct('delete');
+              }
+            }}
+          >
+            Delete Selected
           </Button>
           <Button className="!px-2 !py-1 text-xs" variant="ghost" onClick={() => setSelectedIds(new Set())}>
             Clear
@@ -176,8 +203,7 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
         <table className="w-full min-w-[1800px] text-left text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="sticky left-0 z-10 bg-slate-50 px-2 py-2"></th>
-              <th className="sticky left-[2.5rem] z-10 bg-slate-50 px-3 py-2">Status</th>
+              <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Status</th>
               {(kind === 'RB' || kind === 'OB') && <th className="px-2 py-2">Submission Year</th>}
               <th className="px-2 py-2">Description</th>
               <th className="px-2 py-2">Project Title</th>
@@ -205,7 +231,6 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
               <th className="px-2 py-2">Reviewer 2</th>
               <th className="px-2 py-2">Approver</th>
               <th className="px-2 py-2">Finance Officer</th>
-              <th className="sticky right-0 z-10 bg-slate-50 px-2 py-2">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -227,12 +252,11 @@ export function BudgetLinesTab({ project, kind }: { project: Project; kind: Budg
                 onToggleSelect={() => toggleSelect(line.id)}
                 onLocalEdit={updateLocal}
                 onServerUpdate={updateLocal}
-                onRemoved={(id) => setLines((prev) => prev.filter((l) => l.id !== id))}
               />
             ))}
             {lines.length === 0 && (
               <tr>
-                <td colSpan={kind === 'RB' || kind === 'OB' ? 26 : 23} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={kind === 'RB' || kind === 'OB' ? 24 : 21} className="px-4 py-8 text-center text-slate-400">
                   {isFinance
                     ? `No ${KIND_LABEL[kind]} lines yet.`
                     : `No ${KIND_LABEL[kind]} lines visible to you yet — you'll see a line once you're tagged on it (assigned, reviewing, approving, or as its Finance Officer) or added as a project team member.`}

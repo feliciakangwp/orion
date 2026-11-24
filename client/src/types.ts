@@ -268,7 +268,12 @@ export type WorkflowStep =
   | 'PENDING_APPROVAL_APPROVER'
   | 'APPROVED';
 
-export type BudgetLineStatus = 'Draft' | 'Review' | 'Clarification' | 'Pending Approval' | 'Approved';
+// 'New' is a never-submitted line (empty history) still in its initial
+// Draft step — only one of these can be deleted. 'Draft' is the same step
+// after the line has already been through the workflow at least once (a
+// reject or a Return sent it back here) — it can still be edited, just not
+// deleted. See statusFor() in lib/workflow.ts.
+export type BudgetLineStatus = 'New' | 'Draft' | 'Review' | 'Clarification' | 'Pending Approval' | 'Approved';
 
 export type OpsOrDev = 'Ops' | 'Dev';
 export type YesNo = 'Yes' | 'No';

@@ -624,16 +624,23 @@ so a path-based router would 404 on refresh of a deep link.)
   starts **Open** and can be marked **Closed** once its return lines
   exist, which in practice is always true immediately — there's no
   separate "the lines haven't been created yet" state to wait out.
-- **Mass Submit / Mass Approve / Mass Reassign** — every Budget Line Item
-  row (per-project tab or cross-project page) and every Review Phase /
-  Approval Phase / Clarification (FM) action-queue row now shows a
-  checkbox, plus Branch Rep / Reviewer 1 / Reviewer 2 / Approver columns
-  (there's no more per-row Reassign button). Ticking one or more rows
-  reveals a toolbar:
+- **Mass Submit / Mass Approve / Mass Reject / Mass Delete / Mass
+  Reassign** — every Budget Line Item row (per-project tab or
+  cross-project page) and every Review Phase / Approval Phase /
+  Clarification (FM) action-queue row shows a checkbox, plus Branch Rep /
+  Reviewer 1 / Reviewer 2 / Approver columns — there is no per-row
+  Submit/Approve/Reject/Delete button any more; every action lives in one
+  toolbar at the top of the page, next to **+ New**/**+ Add**. Ticking one
+  or more rows reveals it:
   - **Submit Selected** (Budget Line Item pages only) submits every
     ticked line the acting Branch Rep owns.
   - **Approve Selected** approves every ticked line the acting user
     currently has a turn on.
+  - **Reject Selected** rejects every ticked line the acting user
+    currently has a turn on.
+  - **Delete Selected** (Budget Line Item pages only) deletes every
+    ticked line that's still **New** (see below) and owned by the acting
+    Branch Rep.
   - **Reassign Selected** opens a bulk modal listing every ticked line
     side by side, each with its own Branch Rep (ad hoc lines only),
     Reviewer 1, Reviewer 2, and Approver dropdowns, pre-filled with its
@@ -646,6 +653,14 @@ so a path-based router would 404 on refresh of a deep link.)
   reassign it, regardless of the line's workflow step; reassigning a
   role away from yourself means you naturally stop seeing that line
   afterward.
+- **New vs. Draft.** A budget line that has never been submitted (empty
+  history) shows status **New**; once it's been through the workflow at
+  least once and comes back to the same Branch-Rep-editable step (a
+  reject, or a Return), it shows **Draft** instead, even though it's the
+  same underlying workflow step. Only a **New** line can be deleted
+  (Delete Selected, above) — a line that's already picked up reviewer/
+  approver history can still be edited from Draft, but not removed
+  outright.
 - **Reviewer 2 is optional.** A line can be submitted with no Reviewer 2
   at all — Clarification (FM)'s approval then skips Pending Approval
   (Reviewer 2) entirely, going straight to CIO (IT project) or Approver.
@@ -1100,3 +1115,12 @@ so a path-based router would 404 on refresh of a deep link.)
   of its workflow step), so this was enough to satisfy "10 Annual Budget,
   10 Block Budget" per project without hand-authoring hundreds of
   workflow states that the spec never asked for.
+- "Draft lines can't be deleted, only New ones can" is read as: **New**
+  means never submitted (empty `history`), distinct from **Draft**
+  meaning the same workflow step after a reject or a Return sent a line
+  back there. The app has one underlying `DRAFT` workflow step either
+  way (reusing it, rather than adding a second step, keeps every
+  existing permission/visibility rule that already keys off `DRAFT`
+  working unchanged) — `statusFor()` is what tells them apart for display
+  and for the delete check, based on whether the line has ever picked up
+  a history entry.

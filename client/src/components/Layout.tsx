@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { loadSampleData } from '../api';
 import { useAuth } from '../AuthContext';
-import { isSuperAdmin } from '../lib/workflow';
+import { isFinance, isSuperAdmin } from '../lib/workflow';
 import { resetDb } from '../local/db';
 
 function UserImpersonationSwitcher() {
@@ -130,6 +130,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const superAdmin = !!currentUser && isSuperAdmin(currentUser);
   const isFinanceAdmin = superAdmin || (currentUser?.groups.includes('Finance Admin') ?? false);
   const isFinanceManager = superAdmin || (currentUser?.groups.includes('Finance Manager') ?? false);
+  // Finance Officer OR Finance Manager (not Finance Admin) — gates the
+  // Project FY Status (External) and Project Loan Pot nav items, same
+  // group pairing as RequireGroup on those two pages.
+  const isFinanceOfficerOrManager = superAdmin || (!!currentUser && isFinance(currentUser));
 
   return (
     <>
@@ -148,6 +152,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <NavItem to="/projects/funding-pot" onNavigate={onNavigate}>
             Project Funding Pot
           </NavItem>
+          {isFinanceOfficerOrManager && (
+            <>
+              <NavItem to="/projects/fy-status-external" onNavigate={onNavigate}>
+                Project FY Status (External)
+              </NavItem>
+              <NavItem to="/projects/loan-pot" onNavigate={onNavigate}>
+                Project Loan Pot
+              </NavItem>
+            </>
+          )}
         </NavSection>
 
         <NavSection label="Medium Term Projection">

@@ -184,6 +184,32 @@ export interface Aor {
   updatedAt: string;
 }
 
+// ---------- Project Loan Pot (Finance Officer/Finance Manager) ----------
+// A loan between two Projects' external-funded Annual Budget positions —
+// created from a project currently showing Excess into one showing
+// Deficit (see Project FY Status (External)). Creating one immediately
+// (synchronously) books the repayment: a "Return Loan" Original Budget
+// line on the borrower (loanTo) for +loanAmount, and a "Return from Loan"
+// Original Budget line on the lender (loanFrom) for -loanAmount, both
+// landing on the next FY that isn't already Closed and Locked (see
+// isFyClosedForOb in api.ts) — returnFy records exactly which FY that
+// ended up being, since it can skip forward past more than one.
+export type LoanPotStatus = 'Open' | 'Closed';
+
+export interface LoanPot {
+  id: string;
+  fy: number; // "Budget Period" — the Original Budget FY being evaluated when this loan was created
+  status: LoanPotStatus;
+  loanFromProjectId: string; // the lender — was showing Excess
+  loanToProjectId: string; // the borrower — was showing Deficit
+  loanAmount: number;
+  returnLineCreated: boolean; // always true immediately — modeled explicitly since `close` depends on it
+  returnFy: number; // the FY the auto-created return lines actually landed in
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type BudgetKind = 'MTP' | 'BLOCK' | 'RB' | 'OB';
 
 // ---------- Budget Period (Finance Admin) ----------

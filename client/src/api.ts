@@ -49,6 +49,7 @@ import type {
   Group,
   HistoryEntry,
   IctExpenditureCategory,
+  LoanPot,
   Project,
   SubAccountCode,
   TeamMember,
@@ -169,6 +170,75 @@ function belongsToCurrentCycle(line: Pick<StoredBudgetLine, 'kind' | 'submission
   if (line.kind === 'RB') return line.submissionYear === currentRevisedBudgetYear();
   if (line.kind === 'OB') return line.submissionYear === currentOriginalBudgetYear();
   return true;
+}
+
+export type FyBalanceStatus = 'Balanced' | 'Deficit' | 'Excess';
+
+export interface ExternalProjectFyStatus {
+  project: Project;
+  fy: number; // the Original Budget FY being evaluated — currentOriginalBudgetYear() at the time this was read
+  fyOriginalBudget: number;
+  fyRevisedBudget: number;
+  difference: number; // Original minus Revised
+  status: FyBalanceStatus;
+  totalLoanAmount: number; // sum of every open-or-closed loan where this project is the borrower (loanTo)
+}
+
+// Project FY Status (External): every Project Profile with at least one
+// Approved, External Source of Funding entry, with this cycle's total
+// Original Budget vs. total Revised Budget (both summed across every
+// line for the project, any sourceMtpLineId) and the Loan Pot exposure
+// that follows from the difference. Shared by the Project FY Status
+// (External) page and Project Loan Pot's own "New" dropdowns/validation,
+// so both always agree on who currently has Excess/Deficit.
+function computeExternalProjectFyStatuses(db: ReturnType<typeof getDb>): ExternalProjectFyStatus[] {
+  const obYear = currentOriginalBudgetYear();
+  const rbYear = currentRevisedBudgetYear();
+  if (obYear === null || rbYear === null) return [];
+  const results: ExternalProjectFyStatus[] = [];
+  for (const project of db.projects) {
+    const hasApprovedExternalFunding = db.fundingEntries.some((entry) => {
+      if (entry.projectId !== project.id) return false;
+      const source = db.fundingSources.find((s) => s.id === entry.fundingSourceId);
+      return source?.category === 'External' && source.maturity === 'Approved';
+    });
+    if (!hasApprovedExternalFunding) continue;
+    const fyOriginalBudget = db.budgetLines
+      .filter((l) => l.kind === 'OB' && l.projectId === project.id && l.submissionYear === obYear)
+      .reduce((sum, l) => sum + sumPeriods(l.periods), 0);
+    const fyRevisedBudget = db.budgetLines
+      .filter((l) => l.kind === 'RB' && l.projectId === project.id && l.submissionYear === rbYear)
+      .reduce((sum, l) => sum + sumPeriods(l.periods), 0);
+    const difference = fyOriginalBudget - fyRevisedBudget;
+    const status: FyBalanceStatus = difference === 0 ? 'Balanced' : difference < 0 ? 'Deficit' : 'Excess';
+    const totalLoanAmount = db.loanPots.filter((l) => l.loanToProjectId === project.id).reduce((sum, l) => sum + l.loanAmount, 0);
+    results.push({ project, fy: obYear, fyOriginalBudget, fyRevisedBudget, difference, status, totalLoanAmount });
+  }
+  return results;
+}
+
+// Whether `fy`'s Original Budget is no longer reachable for a fresh line
+// to land in and still be actionable: either the exercise has already
+// cycled past it entirely, or it's the exercise's current FY but that
+// cycle is now Closed and Locked. A future FY the exercise hasn't reached
+// yet is never "closed" — it'll simply become current (and so editable)
+// once Annual Budget naturally cycles forward to it.
+function isFyClosedForOb(fy: number): boolean {
+  const curOb = currentOriginalBudgetYear();
+  if (curOb === null) return false;
+  if (fy < curOb) return true;
+  if (fy === curOb) return getBudgetPeriod('ANNUAL').status === 'Locked';
+  return false;
+}
+
+// An even monthly spread of `total` across OB's 12 months for `year` —
+// used for a Loan Pot's auto-created "Return Loan"/"Return from Loan"
+// lines, same rounding approach loadSampleData's own monthly() helper
+// uses for hand-built Original Budget figures.
+function flatMonthly(year: number, total: number): Record<string, number> {
+  const keys = periodKeys('OB', year);
+  const per = Math.round((total / keys.length) * 100) / 100;
+  return Object.fromEntries(keys.map((k) => [k, per]));
 }
 
 // projectId -> every userId who's a team member of it — shared by every
@@ -969,6 +1039,23 @@ export const api = {
           if (nextSource.maturity !== 'Approved') {
             throw new Error('Finance can only change this to an Approved Source of Funding');
           }
+          // Approving an External entry promotes it straight into a real
+          // funding pot (see Project Funding Pot) — the pot details have
+          // to exist first, same as the rest of the entry, not be left for
+          // "later". An Internal entry has no pot-details concept at all
+          // (see PotDetailsPanel's own isExternal gate), so this never
+          // applies to one.
+          if (nextSource.category === 'External') {
+            const missing: string[] = [];
+            if (!entry.fundingPotId.trim()) missing.push('Funding Pot ID');
+            if (!entry.fundStartDate) missing.push('Fund Start Date');
+            if (!entry.fundExpiryDate) missing.push('Fund Expiry Date');
+            if (!entry.developmentCostCentre) missing.push('Project Development Cost Centre');
+            if (!entry.operatingCostCentre) missing.push('Project Operating Cost Centre');
+            if (missing.length > 0) {
+              throw new Error(`Fill in ${missing.join(', ')} before approving this Source of Funding.`);
+            }
+          }
         } else if (isOwningBranchRep(user, project)) {
           if (currentSource.maturity !== 'Pipeline') {
             throw new Error('This entry has already been approved and can no longer be changed by the Branch Rep');
@@ -1719,6 +1806,133 @@ export const api = {
         return aor;
       }),
   },
+
+  // Finance Officer/Finance Manager only, both read and write — this is
+  // sensitive cross-project financial data, not something to leave to a
+  // UI-only gate.
+  projectFyStatus: {
+    list: () =>
+      run(() => {
+        const user = requireUser();
+        if (!isFinance(user)) throw new Error('Only Finance Officer or Finance Manager can view this');
+        return computeExternalProjectFyStatuses(getDb());
+      }),
+  },
+
+  loanPots: {
+    list: () =>
+      run(() => {
+        const user = requireUser();
+        if (!isFinance(user)) throw new Error('Only Finance Officer or Finance Manager can view this');
+        return getDb().loanPots;
+      }),
+    // Books the loan immediately: creates the LoanPot record and, in the
+    // same action, the two Original Budget lines that make it real on
+    // both sides (see isFyClosedForOb for where they land). There's no
+    // separate "create the lines later" step — by the time this returns,
+    // `close` is already allowed.
+    create: (data: { loanFromProjectId: string; loanToProjectId: string; loanAmount: number }) =>
+      run(() => {
+        const user = requireUser();
+        if (!isFinance(user)) throw new Error('Only Finance Officer or Finance Manager can create a loan');
+        if (data.loanFromProjectId === data.loanToProjectId) {
+          throw new Error('Loan From and Loan To must be different projects');
+        }
+        if (!Number.isFinite(data.loanAmount) || data.loanAmount <= 0) {
+          throw new Error('Loan Amount must be greater than 0');
+        }
+        const db = getDb();
+        const statuses = computeExternalProjectFyStatuses(db);
+        const fromStatus = statuses.find((s) => s.project.id === data.loanFromProjectId);
+        const toStatus = statuses.find((s) => s.project.id === data.loanToProjectId);
+        if (!fromStatus || fromStatus.status !== 'Excess') {
+          throw new Error('Loan From must be a project currently showing Excess on Project FY Status (External)');
+        }
+        if (!toStatus || toStatus.status !== 'Deficit') {
+          throw new Error('Loan To must be a project currently showing Deficit on Project FY Status (External)');
+        }
+        if (data.loanAmount > fromStatus.difference) {
+          throw new Error(`Loan Amount cannot exceed the Loan From project's Excess amount (${fromStatus.difference})`);
+        }
+        const fromProject = getProjectOrThrow(data.loanFromProjectId);
+        const toProject = getProjectOrThrow(data.loanToProjectId);
+
+        const loanFy = fromStatus.fy;
+        let returnFy = loanFy + 1;
+        while (isFyClosedForOb(returnFy)) returnFy += 1;
+
+        function returnLine(project: Project, description: string, amount: number): StoredBudgetLine {
+          const periods = flatMonthly(returnFy, amount);
+          return {
+            id: nextId('line'),
+            projectId: project.id,
+            kind: 'OB',
+            step: 'DRAFT',
+            description,
+            opsOrDev: '',
+            account: '',
+            subAcct: project.subAccount,
+            fundingEntryId: null,
+            recurring: 'No',
+            costCentre: '',
+            itProject: '',
+            ictExp: '',
+            buildOrBuy: '',
+            basis: `Auto-created by Project Loan Pot (loan of ${data.loanAmount} for FY${String(loanFy % 100).padStart(2, '0')}).`,
+            budgetType: 'OB',
+            periods,
+            previousPeriods: emptyPeriods('OB', returnFy),
+            justifications: {},
+            justificationForVariance: '',
+            submissionYear: returnFy,
+            sourceMtpLineId: null,
+            assignedToUserId: project.openedByUserId,
+            reviewer1UserId: null,
+            reviewer2UserId: null,
+            approverUserId: null,
+            financeOfficerUserId: null,
+            history: [],
+            createdAt: now(),
+            updatedAt: now(),
+          };
+        }
+        // Borrower (loanTo) must budget extra to pay it back; lender
+        // (loanFrom) budgets that much less so it doesn't over-budget.
+        db.budgetLines.push(returnLine(toProject, 'Return Loan', data.loanAmount));
+        db.budgetLines.push(returnLine(fromProject, 'Return from Loan', -data.loanAmount));
+
+        const loan: LoanPot = {
+          id: nextId('loan'),
+          fy: loanFy,
+          status: 'Open',
+          loanFromProjectId: data.loanFromProjectId,
+          loanToProjectId: data.loanToProjectId,
+          loanAmount: data.loanAmount,
+          returnLineCreated: true,
+          returnFy,
+          createdByUserId: user.id,
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        db.loanPots.push(loan);
+        saveDb();
+        return loan;
+      }),
+    close: (id: string) =>
+      run(() => {
+        const user = requireUser();
+        if (!isFinance(user)) throw new Error('Only Finance Officer or Finance Manager can close a loan');
+        const db = getDb();
+        const loan = db.loanPots.find((l) => l.id === id);
+        if (!loan) throw new Error('Not found');
+        if (loan.status !== 'Open') throw new Error('This loan is not Open');
+        if (!loan.returnLineCreated) throw new Error('The return budget line has not been created yet');
+        loan.status = 'Closed';
+        loan.updatedAt = now();
+        saveDb();
+        return loan;
+      }),
+  },
 };
 
 // Demo data, triggered on demand by the "Load Sample Data" button (see
@@ -1752,12 +1966,15 @@ export async function loadSampleData(): Promise<void> {
     const jasonYong = byName('Jason Yong');
     const jeffreyChoy = byName('Jeffrey Choy');
     const pamelaChan = byName('Pamela Chan');
+    const feliciaKang = byName('Felicia Kang'); // Branch Rep (also Super Admin)
+    const jasonCheah = byName('Jason Cheah'); // Branch Rep (also Super Admin)
     const andyOng = byName('Andy Ong');
     const jonathanTay = byName('Jonathan Tay');
     const kenNg = byName('Ken Ng');
     const raineNg = byName('Raine Ng');
     const chenYu = byName('Chen Yu'); // Finance Officer + Finance Admin
     const limShuYing = byName('Lim Shu Ying'); // Finance Officer
+    const tanChunHuat = byName('Tan Chun Huat'); // Finance Officer
     const francineChua = byName('Francine Chua'); // Finance Manager
     const cherylSim = byName('Cheryl Sim'); // CIO — approves in place of the named Approver for any IT project line
     // The generic, one-per-group placeholder users (named after their own
@@ -2110,6 +2327,171 @@ export async function loadSampleData(): Promise<void> {
     await approveAs(chenYu.id, lineG.id);
     await approveAs(francineChua.id, lineG.id);
 
+    // ---------- Scale up to 30 Project Profiles ----------
+    // Pad Projects 1 & 2 to 10 MTP lines each (Project 3 stays at 0 — it's
+    // deliberately left Pending for the Project Profile Request queue demo,
+    // with nothing approved yet to attach a line to), then add 27 more
+    // Project Profiles — 5 "showcase" ones with an Approved External Source
+    // of Funding (their Project FY Status figures are tuned further below
+    // to demonstrate Project FY Status (External) and Project Loan Pot),
+    // plus 22 plain Approved, Internally-funded ones for volume — each with
+    // 10 MTP lines, and 9 more ad hoc MTP lines (on top of Line D) to reach
+    // 10 ad hoc as well. This all has to happen before Annual Budget first
+    // opens below so every one of these lines' Original/Revised/Block
+    // Budget counterparts roll forward in the same pass as the lines above.
+    //
+    // Every filler line is Recurring = Yes with only its first FY given —
+    // applyRecurringInflation fills in the rest on its own (see
+    // budgetLines.update) — so Original Budget, Revised Budget and Block
+    // Budget all end up with real, nonzero figures automatically; nothing
+    // here needs to be driven through the submit/approve workflow by hand.
+    const ACCOUNT_COST_CENTRE_PAIRS: Array<[string, string]> = [
+      ['511604 ICT Consultation Services', '556789 Customs Systems Modernisation'],
+      ['611602 Maintenance Services', '712045 Trade Facilitation Services'],
+      ['511603 Software as a Service', '556789 Customs Systems Modernisation'],
+      ['511201 IT Equipment', '834210 Container Scanning Operations'],
+      ['611601 Cleaning Services', '712045 Trade Facilitation Services'],
+      ['611102 Overtime Pay', '712045 Trade Facilitation Services'],
+    ];
+    async function addFillerLine(projectId: string | null, ownerUserId: string, seq: number, baseAmount: number, fundingEntryId: string | null) {
+      setApiUser(ownerUserId);
+      const [account, costCentre] = ACCOUNT_COST_CENTRE_PAIRS[seq % ACCOUNT_COST_CENTRE_PAIRS.length];
+      const line = projectId ? await api.budgetLines.create(projectId, 'MTP', 2026) : await api.budgetLines.createAdHoc('MTP', 2026, null);
+      await api.budgetLines.update(
+        line.id,
+        {
+          description: `Recurring Operating Expenditure Line ${seq}`,
+          opsOrDev: 'Ops',
+          account,
+          fundingEntryId,
+          recurring: 'Yes',
+          costCentre,
+          itProject: 'No',
+          basis: 'Baseline estimate for recurring operating expenditure.',
+          periods: { FY26: baseAmount },
+        },
+        2026
+      );
+      return line;
+    }
+
+    for (let seq = 6; seq <= 10; seq++) {
+      await addFillerLine(project1.id, jasonYong.id, seq, 15000 + seq * 1000, funding1.id);
+    }
+    for (let seq = 2; seq <= 10; seq++) {
+      await addFillerLine(project2.id, jeffreyChoy.id, seq, 12000 + seq * 1000, funding2.id);
+    }
+    // 9 more ad hoc MTP lines, on top of Line D, to reach 10 ad hoc total.
+    for (let seq = 2; seq <= 10; seq++) {
+      await addFillerLine(null, jeffreyChoy.id, seq, 10000 + seq * 500, null);
+    }
+
+    const EXTERNAL_SOURCE_PAIRS: Array<[string, string]> = [
+      ['Above the Block (P)', 'Above the Block'],
+      ['Central Digitalisation Board (P)', 'Central Digitalisation Board'],
+      ['Initial Budget (P)', 'Initial Budget'],
+    ];
+    const INTERNAL_SOURCE_PAIR: [string, string] = ['Within the Block (P)', 'Within the Block'];
+    const PROJECT_COST_CENTRE_PAIRS: Array<[string, string]> = [
+      ['556789 Customs Systems Modernisation', '712045 Trade Facilitation Services'],
+      ['256313 IT Application & Technical Services', '834210 Container Scanning Operations'],
+    ];
+    const BULK_PROJECT_TITLES = [
+      'Coastal Surveillance Radar Network', // showcase 0 — tuned to Excess below
+      'Immigration Biometric Kiosk Rollout', // showcase 1 — tuned to Excess below
+      'Cargo Clearance Analytics Platform', // showcase 2 — tuned to Deficit below
+      'Port Security Sensor Upgrade', // showcase 3 — tuned to Deficit below
+      'Customs Document Digitisation Suite', // showcase 4 — tuned to Balanced below
+      'Warehouse Inventory Tracking System',
+      'Vehicle Checkpoint Automation',
+      'Air Cargo Risk Profiling Tool',
+      'Marine Vessel Clearance Portal',
+      'Bonded Warehouse Licensing System',
+      'Trade Statistics Reporting Platform',
+      'Passenger Baggage Screening Upgrade',
+      'Container Yard Management System',
+      'Customs Brokerage Integration Hub',
+      'Excise Duty Collection Modernisation',
+      'K9 Unit Operations Support System',
+      'Perimeter Fencing Sensor Network',
+      'Staff Training Simulation Platform',
+      'Fleet Maintenance Scheduling System',
+      'Document Verification AI Assistant',
+      'Cross-Border Data Exchange Gateway',
+      'Mobile Patrol Communication Upgrade',
+      'Inspection Checklist Digitalisation',
+      'Licence Application Self-Service Portal',
+      'Drone Surveillance Pilot Programme',
+      'Archive Digitisation Initiative',
+      'Help Desk Ticketing System Upgrade',
+    ];
+    const BULK_BRANCH_REPS = [jasonYong, jeffreyChoy, pamelaChan, feliciaKang, jasonCheah];
+    const BULK_FINANCE_OFFICERS = [chenYu, limShuYing, tanChunHuat];
+    const BULK_SUB_ACCOUNTS = ['Q1095 ORION', 'Q1126 Checkpoint Digitalisation'];
+
+    // Collected so the Project FY Status (External) tuning block below can
+    // find each showcase project's first MTP line (and from there, its
+    // rolled-over Revised/Original Budget lines).
+    const showcaseProjectIds: string[] = [];
+    const showcaseMtpLineIds: string[] = [];
+
+    for (let i = 0; i < BULK_PROJECT_TITLES.length; i++) {
+      const isShowcase = i < 5;
+      const branchRep = BULK_BRANCH_REPS[i % BULK_BRANCH_REPS.length];
+      const financeOfficer = BULK_FINANCE_OFFICERS[i % BULK_FINANCE_OFFICERS.length];
+      const [devCc, opCc] = PROJECT_COST_CENTRE_PAIRS[i % PROJECT_COST_CENTRE_PAIRS.length];
+      const subAccount = BULK_SUB_ACCOUNTS[i % BULK_SUB_ACCOUNTS.length];
+
+      setApiUser(branchRep.id);
+      const project = await api.projects.create({
+        title: BULK_PROJECT_TITLES[i],
+        justification: `Sample data generated to demonstrate ORION at a realistic (30 Project Profile) scale: ${BULK_PROJECT_TITLES[i]}.`,
+      });
+      await api.projects.submitRequest(project.id);
+      const [pipelineName, approvedName] = isShowcase ? EXTERNAL_SOURCE_PAIRS[i % EXTERNAL_SOURCE_PAIRS.length] : INTERNAL_SOURCE_PAIR;
+      const pipelineSource = db.fundingSources.find((f) => f.name === pipelineName)!;
+      const approvedSource = db.fundingSources.find((f) => f.name === approvedName)!;
+      const fundingEntry = await api.funding.create(project.id, pipelineSource.id);
+
+      setApiUser(financeOfficer.id);
+      await api.projects.update(project.id, {
+        subAccount,
+        developmentCostCentre: devCc,
+        operatingCostCentre: opCc,
+        financeOfficerId: financeOfficer.id,
+      });
+      await api.projects.approve(project.id);
+      const potDetails = {
+        fundingPotId: `POT-BULK-${i + 1}`,
+        supportedFund: 300000 + i * 10000,
+        fundStartDate: '2026-04-01',
+        fundExpiryDate: '2030-03-31',
+        developmentCostCentre: devCc,
+        operatingCostCentre: opCc,
+      };
+      if (isShowcase) {
+        // External — pot details have to exist before Finance can approve
+        // it (see funding.update()'s validation), so fill those in first.
+        await api.funding.updatePotDetails(fundingEntry.id, potDetails);
+        await api.funding.update(fundingEntry.id, approvedSource.id);
+      } else {
+        // Internal — no such validation, but fill the same details in
+        // anyway so every Approved pot shows up fully filled-in.
+        await api.funding.update(fundingEntry.id, approvedSource.id);
+        await api.funding.updatePotDetails(fundingEntry.id, potDetails);
+      }
+
+      let firstLineId: string | null = null;
+      for (let seq = 1; seq <= 10; seq++) {
+        const line = await addFillerLine(project.id, branchRep.id, seq, 10000 + seq * 1500 + i * 200, fundingEntry.id);
+        if (seq === 1) firstLineId = line.id;
+      }
+      if (isShowcase) {
+        showcaseProjectIds.push(project.id);
+        showcaseMtpLineIds.push(firstLineId!);
+      }
+    }
+
     // ---------- Annual Budget: open (bootstraps Original Budget from MTP) ----------
     setApiUser(chenYu.id);
     await api.budgetPeriods.open('ANNUAL', '2026-04-01', '2027-03-31');
@@ -2256,6 +2638,38 @@ export async function loadSampleData(): Promise<void> {
     // figure in Medium Term Projection, so there was nothing to carry
     // forward (see rollAnnualBudgetForward's "drop if zeroed out" rule).
 
+    // ---------- Project FY Status (External): tune the 5 showcase
+    // projects' current-cycle Revised Budget (FY27) and next-cycle
+    // Original Budget (FY28) totals ----------
+    // Via each showcase project's first MTP line's rolled-over RB/OB
+    // counterparts, to land on a specific Balanced/Deficit/Excess outcome
+    // (see computeExternalProjectFyStatuses: difference = FY Original
+    // Budget - FY Revised Budget). This has to happen before Annual
+    // Budget locks below — once Closed and Locked, only Finance Admin can
+    // reopen it for edits (see requireBudgetPeriodEditable). Both lines
+    // inherit Recurring = Yes from their MTP parent, so it has to be
+    // switched off first — otherwise budgetLines.update's recurring-
+    // growth recompute would distort the flat monthly figure being set
+    // here (same reason obA/obB above do the same). Each showcase
+    // project's own owning Branch Rep has to be the one editing its
+    // lines (same rule as everywhere else — see isOwningBranchRep), not
+    // Finance.
+    async function setShowcaseFyAmounts(mtpLineId: string, ownerUserId: string, revisedBudgetTotal: number, originalBudgetTotal: number) {
+      setApiUser(ownerUserId);
+      const rb = findBySource('RB', mtpLineId, 2027);
+      await api.budgetLines.update(rb.id, { recurring: 'No', periods: flatMonthly(2027, revisedBudgetTotal) }, 2027);
+      const ob = findBySource('OB', mtpLineId, 2028);
+      await api.budgetLines.update(ob.id, { recurring: 'No', periods: flatMonthly(2028, originalBudgetTotal) }, 2028);
+    }
+    const [coastalMtpId, immigrationMtpId, cargoMtpId, portSecurityMtpId, customsDocMtpId] = showcaseMtpLineIds;
+    // Showcase index -> owning Branch Rep: 0 Jason Yong, 1 Jeffrey Choy, 2
+    // Pamela Chan, 3 Felicia Kang, 4 Jason Cheah (see BULK_BRANCH_REPS above).
+    await setShowcaseFyAmounts(coastalMtpId, jasonYong.id, 100000, 150000); // Excess: +50,000
+    await setShowcaseFyAmounts(immigrationMtpId, jeffreyChoy.id, 80000, 130000); // Excess: +50,000
+    await setShowcaseFyAmounts(cargoMtpId, pamelaChan.id, 150000, 100000); // Deficit: -50,000
+    await setShowcaseFyAmounts(portSecurityMtpId, feliciaKang.id, 120000, 70000); // Deficit: -50,000
+    await setShowcaseFyAmounts(customsDocMtpId, jasonCheah.id, 90000, 90000); // Balanced: 0
+
     setApiUser(chenYu.id);
     await api.budgetPeriods.lock('ANNUAL'); // flows the Approved OB total back into MTP's FY28 figure — this is the exercise's final, Closed-and-Locked state.
 
@@ -2318,6 +2732,20 @@ export async function loadSampleData(): Promise<void> {
     const blockC = findBySource('BLOCK', lineC.id);
     setApiUser(jasonYong.id);
     await api.budgetLines.update(blockC.id, { reviewer1UserId: inactivePlaceholder.id }, 2028);
+
+    // ---------- Project Loan Pot demo data ----------
+    // (Project FY Status (External)'s own showcase figures were tuned
+    // further up, right before Annual Budget's cycle-2 lock().)
+    const [coastalProjectId, immigrationProjectId, cargoProjectId, portSecurityProjectId] = showcaseProjectIds;
+    // Loan 1: Coastal Surveillance (Excess) lends to Cargo Clearance
+    // (Deficit) — left Open, with its auto-created Return Loan / Return
+    // from Loan lines visible on Project Loan Pot.
+    setApiUser(francineChua.id);
+    await api.loanPots.create({ loanFromProjectId: coastalProjectId, loanToProjectId: cargoProjectId, loanAmount: 30000 });
+    // Loan 2: Immigration Biometric (Excess) lends to Port Security
+    // (Deficit) — closed straight away, to demonstrate the Closed state too.
+    const loan2 = await api.loanPots.create({ loanFromProjectId: immigrationProjectId, loanToProjectId: portSecurityProjectId, loanAmount: 20000 });
+    await api.loanPots.close(loan2.id);
 
     // ---------- Final period statuses: one Open exercise to play with,
     // the other two Closed and Locked (with the real data built above,

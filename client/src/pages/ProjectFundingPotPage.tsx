@@ -17,13 +17,14 @@ interface PotRow {
   status: PotStatus;
 }
 
-// Project Funding Pot: every Source of Funding entry across every visible
-// Project Profile (same project-visibility rule as Project Profile itself,
-// inherited from iterating projects.list()), with how much of its own
-// Supported Fund has been drawn down by that project's Original Budget —
-// pooled at the project level (not per budget line's own fundingEntryId),
-// matching how the AOR insufficient-balance check is also a pooled,
-// project-level figure rather than tracked per individual line.
+// Project Funding Pot: every Approved Source of Funding entry (a Pipeline
+// one isn't a real pot yet) across every visible Project Profile (same
+// project-visibility rule as Project Profile itself, inherited from
+// iterating projects.list()), with how much of its own Supported Fund has
+// been drawn down by that project's Original Budget — pooled at the
+// project level (not per budget line's own fundingEntryId), matching how
+// the AOR insufficient-balance check is also a pooled, project-level
+// figure rather than tracked per individual line.
 export function ProjectFundingPotPage() {
   const { currentUser, simulationDate } = useAuth();
   const [rows, setRows] = useState<PotRow[]>([]);
@@ -58,6 +59,11 @@ export function ProjectFundingPotPage() {
         const totalDrawnDown = [...drawDownByYear.values()].reduce((a, b) => a + b, 0);
         for (const entry of entries) {
           const source = catalog.find((c) => c.id === entry.fundingSourceId);
+          // Only an Approved funding pot belongs here — a Pipeline entry
+          // isn't a real pot yet (and an External one can't even reach
+          // Approved without its pot details already filled in — see
+          // funding.update()).
+          if (source?.maturity !== 'Approved') continue;
           const balance = entry.supportedFund - totalDrawnDown;
           let status: PotStatus;
           if (balance <= 0) status = 'Closed';
@@ -78,9 +84,9 @@ export function ProjectFundingPotPage() {
       <div className="mb-4">
         <h1 className="text-xl font-semibold text-slate-800">Project Funding Pot</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Every Source of Funding entry across Project Profiles, with how much of its Supported Fund has been drawn
-          down by that project's Original Budget each FY. Funding Pot Balance is Supported Fund minus Total Budget
-          Drawn Down.
+          Every Approved funding pot across Project Profiles — a Pipeline entry isn't a real pot yet — with how
+          much of its Supported Fund has been drawn down by that project's Original Budget each FY. Funding Pot
+          Balance is Supported Fund minus Total Budget Drawn Down.
         </p>
       </div>
       <p className="mb-2 text-xs text-slate-400 sm:hidden">Swipe the table sideways to see more columns.</p>
@@ -131,7 +137,8 @@ export function ProjectFundingPotPage() {
             {!loading && rows.length === 0 && (
               <tr>
                 <td colSpan={9 + years.length} className="px-4 py-8 text-center text-slate-400">
-                  No funding pots yet — add a Source of Funding on a Project Profile's Source of Funding tab.
+                  No Approved funding pots yet — Finance approves a Source of Funding on a Project Profile's Source
+                  of Funding tab (an External one needs its pot details filled in first).
                 </td>
               </tr>
             )}

@@ -17,6 +17,7 @@ import type {
   IctExpenditureCategory,
   InflationItem,
   InflationRate,
+  LoanPot,
   SubAccountCode,
   TeamMember,
   Project,
@@ -43,13 +44,14 @@ export interface DbShape {
   teamMembers: TeamMember[];
   budgetPeriods: BudgetPeriod[];
   aors: Aor[];
+  loanPots: LoanPot[];
   seq: number;
 }
 
-// Bumped again from orion.db.v9: new AOR collection — this is a clean
-// slate with a different shape, so old data is simply left behind under
-// its old key rather than migrated.
-const STORAGE_KEY = 'orion.db.v10';
+// Bumped again from orion.db.v10: new Loan Pot collection — this is a
+// clean slate with a different shape, so old data is simply left behind
+// under its old key rather than migrated.
+const STORAGE_KEY = 'orion.db.v11';
 
 function buildSeedUsers(): User[] {
   const now = new Date().toISOString();
@@ -281,6 +283,7 @@ function emptyDb(): DbShape {
     teamMembers: [],
     budgetPeriods: buildSeedBudgetPeriods(),
     aors: [],
+    loanPots: [],
     seq: 1,
   };
 }

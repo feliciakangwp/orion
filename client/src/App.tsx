@@ -24,6 +24,8 @@ import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectAorDetailPage } from './pages/ProjectAorDetailPage';
 import { ProjectAorListPage } from './pages/ProjectAorListPage';
 import { ProjectFundingPotPage } from './pages/ProjectFundingPotPage';
+import { ProjectFyStatusExternalPage } from './pages/ProjectFyStatusExternalPage';
+import { ProjectLoanPotPage } from './pages/ProjectLoanPotPage';
 import { ProjectProfileList } from './pages/ProjectProfileList';
 import { ProjectProfileRequestPage } from './pages/ProjectProfileRequestPage';
 import { ReviewPhasePage } from './pages/ReviewPhasePage';
@@ -43,6 +45,8 @@ export default function App() {
         <Route path="/projects/aor" element={<ProjectAorListPage />} />
         <Route path="/projects/aor/:id" element={<ProjectAorDetailPage />} />
         <Route path="/projects/funding-pot" element={<ProjectFundingPotPage />} />
+        <Route path="/projects/fy-status-external" element={<ProjectFyStatusExternalPage />} />
+        <Route path="/projects/loan-pot" element={<ProjectLoanPotPage />} />
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
         <Route path="/mtp/budget-line-item" element={<BudgetLineItemPage />} />
         <Route path="/mtp/variance" element={<MtpVariancePage />} />

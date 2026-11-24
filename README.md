@@ -86,29 +86,55 @@ etc. are stored in **that browser's `localStorage`**, under the key
 - Right below it, **"Load Sample Data"** wipes and reseeds the local store
   too, then builds a rich demo dataset on top of it so every tab has
   something real to look at and act on:
-  - **Three Project Profiles**: two Active (one IT — "Trade Declaration
-    System Enhancement" — one not — "Checkpoint Scanner Replacement") and
-    one still **Pending** ("Border Checkpoint CCTV Upgrade"), populating
-    the **Project Profile Request** queue.
+  - **30 Project Profiles**: the original 3 hand-built ones — two Active
+    (one IT — "Trade Declaration System Enhancement" — one not —
+    "Checkpoint Scanner Replacement") and one still **Pending** ("Border
+    Checkpoint CCTV Upgrade"), populating the **Project Profile Request**
+    queue — plus 27 more Active ones generated in bulk: 5 "showcase"
+    projects with an Approved, External Source of Funding (tuned to
+    demonstrate **Project FY Status (External)**/**Project Loan Pot**,
+    below) and 22 plain ones with an Approved, Internal Source of Funding,
+    for volume. Every Active project has **10 Medium Term Projection
+    lines** (and so 10 Original/Revised Budget lines and 10 Block Budget
+    lines too, rolled forward automatically — see below); the Pending one
+    has none yet, since nothing's been approved to attach a line to. There
+    are also **10 ad hoc Medium Term Projection lines** (no Project
+    Profile at all).
   - **AOR**: the IT project has two (a confirmed one plus a later,
     still-unconfirmed top-up — "+Add" and a live "Finance Confirmed"
-    action to try); the other Active project has one, also unconfirmed
-    and smaller than what it ends up spending — AOR knock-off pools
-    confirmed and unconfirmed funds alike, so both still drive the
+    action to try); the other original Active project has one, also
+    unconfirmed and smaller than what it ends up spending — AOR knock-off
+    pools confirmed and unconfirmed funds alike, so both still drive the
     Insufficient AOR Balance highlight on their Original Budget lines.
-  - **Project Funding Pot**: both Active projects' Source of Funding
-    entries are promoted to an Approved catalog source and given real pot
-    details (ID, Supported Fund, External Fund dates), so the page shows
-    real FY-by-FY drawdown and a Funding Pot Balance — one of them
-    negative, since its Original Budget spend outgrew its Supported Fund.
-  - **Seven Medium Term Projection lines** across the two Active projects
-    plus one ad hoc (no Project Profile), carried to seven different
-    workflow stages — two fully Approved (one via the plain
+  - **Project Funding Pot**: every Approved project's Source of Funding
+    entry is promoted to an Approved catalog source and given real pot
+    details (ID, Supported Fund, External Fund dates — required up front
+    for an External entry, see below), so the page shows real FY-by-FY
+    drawdown and a Funding Pot Balance for all of them — one of the
+    original two negative, since its Original Budget spend outgrew its
+    Supported Fund.
+  - **Project FY Status (External)** (Finance Officer/Finance Manager
+    only): the 5 showcase projects' current-cycle Revised Budget and
+    next-cycle Original Budget totals are tuned to land on one each of
+    **Excess** (two of them), **Deficit** (two of them), and **Balanced**
+    (one) — see `setShowcaseFyAmounts` in `loadSampleData()`.
+  - **Project Loan Pot** (same two groups): two loans between showcase
+    projects, lending from an Excess one to a Deficit one — one left
+    **Open** (with its auto-created Return Loan / Return from Loan lines
+    already visible on the next FY's Original Budget), one **Closed**
+    right away, to show both states.
+  - **Seven Medium Term Projection lines** across the two original Active
+    projects plus one ad hoc (no Project Profile), carried to seven
+    different workflow stages — two fully Approved (one via the plain
     Reviewer-2-present path, one via the Reviewer-2-skip path), one each
     sitting at Clarification (FO), Clarification (FM), Review, and
     Pending Approval (Reviewer 2), and one still Draft — plus one line
     tagged to the generic Inactive "SMGT" placeholder user, populating
-    "with Inactive Users" on all three exercises (see below).
+    "with Inactive Users" on all three exercises (see below). The other
+    290-odd Medium Term Projection lines (10 per bulk project, plus the
+    ad hoc ones) are plain, Recurring = Yes, single-FY-given filler lines
+    — real volume to browse and page through, not narrated workflow
+    states.
   - **Two Annual Budget cycles**, so Revised Budget has real rows too
     (empty on a lone first cycle is correct, not a bug, but isn't much to
     look at) — cycle 1 bootstraps Original Budget straight from Medium
@@ -304,7 +330,13 @@ so a path-based router would 404 on refresh of a deep link.)
   its **Funding Pot ID**, **Supported Fund** amount, **Fund Start/Expiry
   Date**, and **Project Development/Operating Cost Centre** — Finance
   (Officer/Manager/Admin) fills these in, not the Branch Rep, since they
-  drive the Mainstreaming computation (see below).
+  drive the Mainstreaming computation (see below). For an **External**
+  entry, Finance can't actually promote it to Approved until all five of
+  those pot-detail fields are filled in — approving one straight away
+  creates a real funding pot (see **Project Funding Pot**, below), so the
+  pot details have to exist already rather than being left for "later". An
+  **Internal** entry has no such requirement (and no pot-details UI at
+  all).
 - **MTP** / **Block Budget** tabs — identical structure, 15 vs. 5 FY columns
   starting from the global **Simulation Year** control in the top bar. It
   applies across every project, so switching it is a "what-if" lens rather
@@ -538,26 +570,60 @@ so a path-based router would 404 on refresh of a deep link.)
   to raise a top-up or another AOR, not a block — and it clears the
   moment a new (even unconfirmed) AOR brings the pool back above spend.
 - **Project Funding Pot** (sidebar: Project Profile → Project Funding
-  Pot) lists every Source of Funding entry across every visible Project
-  Profile — one row per entry (a project with more than one Source of
-  Funding pick shows more than one row) — with **Funding Pot ID**,
-  **Status** (**Active**/**Closed**/**Expired**, computed the same way
-  as AOR's own status: Closed once its Funding Pot Balance reaches zero,
-  Expired once its External Fund End Date has passed, Active otherwise),
-  **Project Title**, **Source of Funding**, **External Fund Start/End
-  Date**, **Supported Fund**, **Funding Pot Balance** (Supported Fund
-  minus Total Budget Drawn Down), **Total Budget Drawn Down**, and one
-  column per FY that has ever had an Original Budget. Each FY column —
-  and so the Total/Balance too — is that **project's** total Original
-  Budget for that FY (summed across every line, every cycle, the same
-  "lifetime ledger" `listAllForProject` already powers for the
-  insufficient-balance check above), not scoped to the specific line(s)
-  that happened to tag this particular funding entry — same pooled,
-  project-level approach as the AOR knock-off, for the same reason (the
-  spec asks for "the total Original Budget of the Project profile," and
-  a project's Original Budget spend draws against its funding sources
-  collectively, not line-by-line against whichever pot it happened to be
-  tagged to).
+  Pot) lists every **Approved** Source of Funding entry across every
+  visible Project Profile — one row per entry (a project with more than
+  one Approved Source of Funding pick shows more than one row); a
+  Pipeline entry isn't a real pot yet, so it's left off entirely — with
+  **Funding Pot ID**, **Status** (**Active**/**Closed**/**Expired**,
+  computed the same way as AOR's own status: Closed once its Funding Pot
+  Balance reaches zero, Expired once its External Fund End Date has
+  passed, Active otherwise), **Project Title**, **Source of Funding**,
+  **External Fund Start/End Date**, **Supported Fund**, **Funding Pot
+  Balance** (Supported Fund minus Total Budget Drawn Down), **Total
+  Budget Drawn Down**, and one column per FY that has ever had an
+  Original Budget. Each FY column — and so the Total/Balance too — is
+  that **project's** total Original Budget for that FY (summed across
+  every line, every cycle, the same "lifetime ledger"
+  `listAllForProject` already powers for the insufficient-balance check
+  above), not scoped to the specific line(s) that happened to tag this
+  particular funding entry — same pooled, project-level approach as the
+  AOR knock-off, for the same reason (the spec asks for "the total
+  Original Budget of the Project profile," and a project's Original
+  Budget spend draws against its funding sources collectively, not
+  line-by-line against whichever pot it happened to be tagged to).
+- **Project FY Status (External)** (sidebar: Project Profile → Project FY
+  Status (External); **Finance Officer/Finance Manager only**) tracks
+  every project with an Approved, External Source of Funding against this
+  FY's Annual Budget cycle, as **Project Title**, **Current Status** (the
+  project's own lifecycle status), **Status**, **FY Original Budget**,
+  **FY Revised Budget**, **Differences**, and **Total Loan Amount**. FY
+  Original/Revised Budget are that project's own Original/Revised Budget
+  totals for the Annual Budget exercise's current Original/Revised Budget
+  FY respectively (e.g. with the exercise on FY27 Revised/FY28 Original,
+  it's each project's FY28 Original Budget total and FY27 Revised Budget
+  total) — not the same FY compared against itself, since Original and
+  Revised Budget are always exactly one FY apart (see
+  `currentOriginalBudgetYear`/`currentRevisedBudgetYear`). **Differences**
+  is FY Original Budget minus FY Revised Budget; **Status** is
+  **Balanced** at exactly 0, **Deficit** when negative, **Excess** when
+  positive. **Total Loan Amount** is the sum of every Project Loan Pot
+  loan where this project is the borrower (Loan To).
+- **Project Loan Pot** (sidebar: Project Profile → Project Loan Pot; same
+  two groups) lists every loan as **FY**, **Status** (**Open**/
+  **Closed**), **Loan From**, **Loan To**, **Loan Amount**, plus a **New**
+  button. **Loan From** only offers projects currently showing **Excess**
+  on Project FY Status (External); **Loan To** only offers ones showing
+  **Deficit**; the amount is capped at the Loan From project's Excess
+  figure. Creating a loan is immediate and synchronous — it books the
+  repayment there and then as two new Original Budget lines: the borrower
+  (Loan To) gets a **Return Loan** line for +amount, the lender (Loan
+  From) gets a **Return from Loan** line for -amount, both landing on the
+  FY right after the loan's own Budget Period (the Original Budget FY in
+  view when the loan was created) — or the next one after that still
+  open, if that FY's Original Budget is already Closed and Locked. A loan
+  starts **Open** and can be marked **Closed** once its return lines
+  exist, which in practice is always true immediately — there's no
+  separate "the lines haven't been created yet" state to wait out.
 - **Mass Submit / Mass Approve / Mass Reassign** — every Budget Line Item
   row (per-project tab or cross-project page) and every Review Phase /
   Approval Phase / Clarification (FM) action-queue row now shows a
@@ -1004,3 +1070,33 @@ so a path-based router would 404 on refresh of a deep link.)
   FYs and the page has no natural "current FY" of its own to center on
   (unlike Medium Term Projection/Block Budget, which each have exactly
   one active window).
+- Project FY Status (External)'s **Current Status** and **Status**
+  columns both being asked for, with the computation only described for
+  one of them, is read as: **Current Status** is the Project Profile's
+  own lifecycle status (Active, in practice, since only an Active project
+  can have an Approved Source of Funding), and **Status** is the
+  Balanced/Deficit/Excess figure the spec actually describes the
+  computation for — two different pieces of information, not a
+  duplicate column.
+- A loan's **Budget Period** is read as the Original Budget FY that
+  Project FY Status (External) is evaluating *at the moment the loan is
+  created* (`currentOriginalBudgetYear()`), rather than the real-world
+  calendar FY — this keeps the loan and the page that drives it looking
+  at the same FY, and the spec's own worked example ("this year is FY26")
+  is consistent with either reading since the example never puts the two
+  dates in tension.
+- A loan's repayment lines are inserted directly as new, plain Original
+  Budget records (not routed through Medium Term Projection's own
+  rollover) — nothing elsewhere in the app assumes at most one Original
+  Budget line per (project, FY), so this doesn't conflict with anything,
+  and it matches the spec's "a line will be created" wording more
+  directly than retrofitting it through the MTP bootstrap path would.
+- `loadSampleData()`'s 27 bulk-generated Project Profiles' Medium Term
+  Projection lines are plain, Recurring = Yes, single-FY-given filler
+  lines — not driven through the submit/approve workflow by hand the way
+  the three original narrated projects' seven lines are. Original/
+  Revised/Block Budget line *existence* doesn't depend on that (the real
+  rollover functions mirror every Medium Term Projection line regardless
+  of its workflow step), so this was enough to satisfy "10 Annual Budget,
+  10 Block Budget" per project without hand-authoring hundreds of
+  workflow states that the spec never asked for.

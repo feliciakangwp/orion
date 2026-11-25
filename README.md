@@ -137,14 +137,19 @@ etc. are stored in **that browser's `localStorage`**, under the key
     states.
   - **Two Annual Budget cycles**, so Revised Budget has real rows too
     (empty on a lone first cycle is correct, not a bug, but isn't much to
-    look at) — cycle 1 bootstraps Original Budget straight from Medium
-    Term Projection and carries one line to Approved and one to
-    Clarification (FO); cycle 2 (after a real `resetToDraft` +
-    `open()`, exactly as Finance Admin would do it) duplicates cycle 1's
-    Original Budget into this cycle's Revised Budget and bootstraps a
-    fresh Original Budget from Medium Term Projection's now-updated
-    figures, again carrying one line each to Approved and Clarification
-    (FO) in both Revised and Original Budget.
+    look at) — cycle 1 (FY25 Revised/FY26 Original) bootstraps Original
+    Budget straight from Medium Term Projection and carries one line to
+    Approved and one to Clarification (FO); cycle 2 (after a real
+    `resetToDraft` + `open()`, exactly as Finance Admin would do it, and
+    the cycle left active) duplicates cycle 1's Original Budget into this
+    cycle's Revised Budget and bootstraps a fresh Original Budget from
+    Medium Term Projection's now-updated figures, again carrying one line
+    each to Approved and Clarification (FO) in both Revised and Original
+    Budget. Cycle 2 lands on **FY26 Revised / FY27 Original** — matching
+    the Simulation Year's own default of 2026, so "this year" reads as
+    FY26 everywhere a page shows Annual Budget's current cycle (Project
+    FY Status (External) and Project Loan Pot included) — see the note on
+    the Simulation Date below.
   - **Block Budget**, rolled forward from Medium Term Projection's
     current (twice flowed-back) figures, with the same Approved/
     Clarification (FO)/Draft spread.
@@ -162,15 +167,21 @@ etc. are stored in **that browser's `localStorage`**, under the key
   `open`/`lock`/`resetToDraft` calls the UI itself uses) rather than
   hand-written records, so every linkage matches the rules those
   functions already enforce — see `loadSampleData()` in
-  `client/src/api.ts` for the exact script and its one deliberate
-  exception: Block Budget's rollover is called directly (bypassing the
-  real `open()` action's requirement that every *other* exercise be
-  Draft at that moment) since Annual Budget's cycle 2 has to stay
-  non-Draft for its own lines to stay visible (see
-  `belongsToCurrentCycle`), and the two can't both be non-Draft through
-  `open()` itself. Block Budget's own exercise period is then bypassed
-  the same way, straight to Closed and Locked with a real Start/End Date,
-  rather than lingering at Draft.
+  `client/src/api.ts` for the exact script and its deliberate exceptions:
+  Block Budget's rollover is called directly (bypassing the real
+  `open()` action's requirement that every *other* exercise be Draft at
+  that moment) since Annual Budget's cycle 2 has to stay non-Draft for
+  its own lines to stay visible (see `belongsToCurrentCycle`), and the
+  two can't both be non-Draft through `open()` itself. Block Budget's own
+  exercise period is then bypassed the same way, straight to Closed and
+  Locked with a real Start/End Date, rather than lingering at Draft.
+  Cycle 1's own window (FY25/26) is also in the past relative to the
+  browser's real clock by the time this runs, which would otherwise read
+  as Closed for Submission and block every non-Finance actor (Branch Rep,
+  Reviewer, CIO) from submitting/approving its lines — `loadSampleData()`
+  briefly moves the Simulation Date back into that window for just that
+  stretch, then restores it before cycle 2 opens (whose own window
+  already covers the real "now").
 - Nothing above is automatic: a fresh browser (or either of these two
   buttons) only ever produces what that button documents — every existing
   Playwright regression test assumes a truly blank slate on first load, so
@@ -599,9 +610,10 @@ so a path-based router would 404 on refresh of a deep link.)
   **FY Revised Budget**, **Differences**, and **Total Loan Amount**. FY
   Original/Revised Budget are that project's own Original/Revised Budget
   totals for the Annual Budget exercise's current Original/Revised Budget
-  FY respectively (e.g. with the exercise on FY27 Revised/FY28 Original,
-  it's each project's FY28 Original Budget total and FY27 Revised Budget
-  total) — not the same FY compared against itself, since Original and
+  FY respectively (e.g. with the exercise on FY26 Revised/FY27 Original —
+  the sample data's own current cycle — it's each project's FY27 Original
+  Budget total and FY26 Revised Budget total) — not the same FY compared
+  against itself, since Original and
   Revised Budget are always exactly one FY apart (see
   `currentOriginalBudgetYear`/`currentRevisedBudgetYear`). **Differences**
   is FY Original Budget minus FY Revised Budget; **Status** is

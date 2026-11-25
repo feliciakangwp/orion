@@ -1961,6 +1961,7 @@ export const api = {
 export async function loadSampleData(): Promise<void> {
   resetDb();
   const prevUserId = currentUserId;
+  const prevSimDate = currentSimDate;
   try {
     const db = getDb();
     const byName = (name: string) => {
@@ -2498,15 +2499,34 @@ export async function loadSampleData(): Promise<void> {
     }
 
     // ---------- Annual Budget: open (bootstraps Original Budget from MTP) ----------
+    // Opened a year earlier than the Simulation Year's own FY (FY25,
+    // 2025-04-01) rather than at FY26 — see the cycle-2 open() below, which
+    // is the one that actually lands on FY26/FY27: with Simulation Year
+    // 2026, the app's own Revised Budget = current FY / Original Budget =
+    // next FY rule (see rollAnnualBudgetForward's doc comment) means the
+    // cycle left active at the end of this function has to open at
+    // 2026-04-01, not 2025-04-01, to read as "this year" — and reaching it
+    // needs one prior cycle before it, purely so Revised Budget has real,
+    // non-empty rows to show (a first-ever cycle's Revised Budget is
+    // always empty — see the comment below).
     setApiUser(chenYu.id);
-    await api.budgetPeriods.open('ANNUAL', '2026-04-01', '2027-03-31');
+    await api.budgetPeriods.open('ANNUAL', '2025-04-01', '2026-03-31');
     // First-ever cycle: Revised Budget starts empty (nothing to duplicate
     // from yet) — this is expected, not a bug.
 
-    const obKeys = periodKeys('OB', 2027);
+    // This cycle's own window is in the past relative to the browser's
+    // real "now" (needed so the cycle left active at the end of this
+    // function reads as FY26/FY27 — see the comment above) — without
+    // this, requireBudgetPeriodEditable would see it as Closed for
+    // Submission and block every non-Finance actor below (Branch Rep,
+    // Reviewer, CIO) from submitting/approving obA/obB. Restored once
+    // cycle 2 opens, below, whose own window already covers real "now".
+    setApiSimDate('2025-06-01');
+
+    const obKeys = periodKeys('OB', 2026);
     const monthly = (total: number) => Object.fromEntries(obKeys.map((k) => [k, Math.round((total / obKeys.length) * 100) / 100]));
 
-    const obA = findBySource('OB', lineA.id, 2027);
+    const obA = findBySource('OB', lineA.id, 2026);
     setApiUser(jasonYong.id);
     await api.budgetLines.update(
       obA.id,
@@ -2524,7 +2544,7 @@ export async function loadSampleData(): Promise<void> {
         approverUserId: cherylSim.id, // IT project — CIO gates the final approval, not this field
         justificationForVariance: 'Scope grew to include the real-time risk engine integration originally planned for a later phase.',
       },
-      2027
+      2026
     );
     await submitAs(jasonYong.id, obA.id);
     await approveAs(andyOng.id, obA.id);
@@ -2532,7 +2552,7 @@ export async function loadSampleData(): Promise<void> {
     await approveAs(francineChua.id, obA.id); // no Reviewer 2 -> straight to Pending Approval (CIO), IT project
     await approveAs(cherylSim.id, obA.id); // CIO -> Approved
 
-    const obB = findBySource('OB', lineB.id, 2027);
+    const obB = findBySource('OB', lineB.id, 2026);
     setApiUser(jasonYong.id);
     await api.budgetLines.update(
       obB.id,
@@ -2542,7 +2562,7 @@ export async function loadSampleData(): Promise<void> {
         approverUserId: raineNg.id,
         justificationForVariance: 'Support contract renewed at the same annual rate as planned.',
       },
-      2027
+      2026
     );
     await submitAs(jasonYong.id, obB.id);
     await approveAs(andyOng.id, obB.id); // left at Clarification (FO), pending Finance Officer
@@ -2553,9 +2573,15 @@ export async function loadSampleData(): Promise<void> {
     // reviewers — Branch Rep hasn't gotten to them yet.
 
     setApiUser(chenYu.id);
-    await api.budgetPeriods.lock('ANNUAL'); // flows the Approved OB total back into MTP's FY27 figure
+    await api.budgetPeriods.lock('ANNUAL'); // flows the Approved OB total back into MTP's FY26 figure
 
-    // ---------- Annual Budget cycle 2: Revised Budget gets real data ----------
+    // Cycle 2's own window covers real "now" on its own, so the simulated
+    // date goes back to whatever it really was before this function ran.
+    setApiSimDate(prevSimDate);
+
+    // ---------- Annual Budget cycle 2: Revised Budget gets real data, and
+    // this is the cycle left active — Revised Budget = FY26, Original
+    // Budget = FY27, matching the Simulation Year ----------
     // Reset the just-finished cycle back to Draft to free the exercise's
     // slot (the real, Finance-Admin-only action), then open the next FY —
     // this duplicates cycle 1's Original Budget into this cycle's Revised
@@ -2563,9 +2589,9 @@ export async function loadSampleData(): Promise<void> {
     // from — now it has real rows) and bootstraps a fresh Original Budget
     // for the FY after that from Medium Term Projection's current state.
     await api.budgetPeriods.resetToDraft('ANNUAL');
-    await api.budgetPeriods.open('ANNUAL', '2027-04-01', '2028-03-31');
+    await api.budgetPeriods.open('ANNUAL', '2026-04-01', '2027-03-31');
 
-    const rbA = findBySource('RB', lineA.id, 2027);
+    const rbA = findBySource('RB', lineA.id, 2026);
     setApiUser(jasonYong.id);
     await api.budgetLines.update(
       rbA.id,
@@ -2575,7 +2601,7 @@ export async function loadSampleData(): Promise<void> {
         approverUserId: cherylSim.id, // IT project — CIO gates the final approval
         justificationForVariance: 'Additional licensing costs identified during implementation.',
       },
-      2027
+      2026
     );
     await submitAs(jasonYong.id, rbA.id);
     await approveAs(andyOng.id, rbA.id);
@@ -2583,13 +2609,13 @@ export async function loadSampleData(): Promise<void> {
     await approveAs(francineChua.id, rbA.id); // no Reviewer 2 -> straight to Pending Approval (CIO), IT project
     await approveAs(cherylSim.id, rbA.id); // CIO -> Approved
 
-    const rbB = findBySource('RB', lineB.id, 2027);
+    const rbB = findBySource('RB', lineB.id, 2026);
     setApiUser(jasonYong.id);
     // Left exactly as duplicated (no edits — no variance, no justification
     // needed to submit) other than picking its Reviewer 1/Approver again
     // (every Revised/Original Budget line starts a cycle with none set,
     // even one duplicated from last cycle's line).
-    await api.budgetLines.update(rbB.id, { reviewer1UserId: andyOng.id, approverUserId: raineNg.id }, 2027);
+    await api.budgetLines.update(rbB.id, { reviewer1UserId: andyOng.id, approverUserId: raineNg.id }, 2026);
     await submitAs(jasonYong.id, rbB.id);
     await approveAs(andyOng.id, rbB.id); // left at Clarification (FO), pending Finance Officer
 
@@ -2600,11 +2626,11 @@ export async function loadSampleData(): Promise<void> {
     // (not obC, which stops being the "current cycle" the moment this
     // cycle opens — see belongsToCurrentCycle) is what stays visible on
     // Annual Budget's "with Inactive Users" cleanup page going forward.
-    const rbC = findBySource('RB', lineC.id, 2027);
+    const rbC = findBySource('RB', lineC.id, 2026);
     setApiUser(jasonYong.id);
-    await api.budgetLines.update(rbC.id, { financeOfficerUserId: inactivePlaceholder.id }, 2027);
+    await api.budgetLines.update(rbC.id, { financeOfficerUserId: inactivePlaceholder.id }, 2026);
 
-    const obA2 = findBySource('OB', lineA.id, 2028);
+    const obA2 = findBySource('OB', lineA.id, 2027);
     setApiUser(jasonYong.id);
     await api.budgetLines.update(
       obA2.id,
@@ -2614,7 +2640,7 @@ export async function loadSampleData(): Promise<void> {
         approverUserId: cherylSim.id,
         justificationForVariance: 'Scope grew to include the real-time risk engine integration originally planned for a later phase.',
       },
-      2028
+      2027
     );
     await submitAs(jasonYong.id, obA2.id);
     await approveAs(andyOng.id, obA2.id);
@@ -2622,7 +2648,7 @@ export async function loadSampleData(): Promise<void> {
     await approveAs(francineChua.id, obA2.id);
     await approveAs(cherylSim.id, obA2.id); // CIO -> Approved
 
-    const obB2 = findBySource('OB', lineB.id, 2028);
+    const obB2 = findBySource('OB', lineB.id, 2027);
     setApiUser(jasonYong.id);
     await api.budgetLines.update(
       obB2.id,
@@ -2632,20 +2658,20 @@ export async function loadSampleData(): Promise<void> {
         approverUserId: raineNg.id,
         justificationForVariance: 'Slight increase in contracted support hours.',
       },
-      2028
+      2027
     );
     await submitAs(jasonYong.id, obB2.id);
     await approveAs(andyOng.id, obB2.id); // left at Clarification (FO)
 
     // obC2/obD2/obF2/obG2 (this cycle's fresh Original Budget for lines C,
     // D, F, G) are left exactly as bootstrapped — Draft, zero periods, no
-    // reviewers. Line E has nothing here at all: it never grew a FY28
+    // reviewers. Line E has nothing here at all: it never grew a FY27
     // figure in Medium Term Projection, so there was nothing to carry
     // forward (see rollAnnualBudgetForward's "drop if zeroed out" rule).
 
     // ---------- Project FY Status (External): tune the 5 showcase
-    // projects' current-cycle Revised Budget (FY27) and next-cycle
-    // Original Budget (FY28) totals ----------
+    // projects' current-cycle Revised Budget (FY26) and next-cycle
+    // Original Budget (FY27) totals ----------
     // Via each showcase project's first MTP line's rolled-over RB/OB
     // counterparts, to land on a specific Balanced/Deficit/Excess outcome
     // (see computeExternalProjectFyStatuses: difference = FY Original
@@ -2661,10 +2687,10 @@ export async function loadSampleData(): Promise<void> {
     // Finance.
     async function setShowcaseFyAmounts(mtpLineId: string, ownerUserId: string, revisedBudgetTotal: number, originalBudgetTotal: number) {
       setApiUser(ownerUserId);
-      const rb = findBySource('RB', mtpLineId, 2027);
-      await api.budgetLines.update(rb.id, { recurring: 'No', periods: flatMonthly(2027, revisedBudgetTotal) }, 2027);
-      const ob = findBySource('OB', mtpLineId, 2028);
-      await api.budgetLines.update(ob.id, { recurring: 'No', periods: flatMonthly(2028, originalBudgetTotal) }, 2028);
+      const rb = findBySource('RB', mtpLineId, 2026);
+      await api.budgetLines.update(rb.id, { recurring: 'No', periods: flatMonthly(2026, revisedBudgetTotal) }, 2026);
+      const ob = findBySource('OB', mtpLineId, 2027);
+      await api.budgetLines.update(ob.id, { recurring: 'No', periods: flatMonthly(2027, originalBudgetTotal) }, 2027);
     }
     const [coastalMtpId, immigrationMtpId, cargoMtpId, portSecurityMtpId, customsDocMtpId] = showcaseMtpLineIds;
     // Showcase index -> owning Branch Rep: 0 Jason Yong, 1 Jeffrey Choy, 2
@@ -2676,7 +2702,7 @@ export async function loadSampleData(): Promise<void> {
     await setShowcaseFyAmounts(customsDocMtpId, jasonCheah.id, 90000, 90000); // Balanced: 0
 
     setApiUser(chenYu.id);
-    await api.budgetPeriods.lock('ANNUAL'); // flows the Approved OB total back into MTP's FY28 figure — this is the exercise's final, Closed-and-Locked state.
+    await api.budgetPeriods.lock('ANNUAL'); // flows the Approved OB total back into MTP's FY27 figure — this is the exercise's final, Closed-and-Locked state.
 
     // ---------- Block Budget: roll forward from MTP ----------
     // The real `open()` action requires every other exercise to be Draft,
@@ -2688,8 +2714,8 @@ export async function loadSampleData(): Promise<void> {
     // Start Year already set) instead of Open, which Finance Admin can
     // still do for real at any time — re-running the rollover is
     // idempotent (updates existing lines in place, never duplicates).
-    await api.budgetPeriods.setBlockBudgetStartYear(2028);
-    rollBlockBudgetForward(2028, chenYu.id);
+    await api.budgetPeriods.setBlockBudgetStartYear(2027);
+    rollBlockBudgetForward(2027, chenYu.id);
     saveDb();
 
     const blockA = findBySource('BLOCK', lineA.id);
@@ -2706,13 +2732,13 @@ export async function loadSampleData(): Promise<void> {
         // year after the window's first (which is never flagged) so
         // whichever one Block Budget's own variance check picks is ready.
         justifications: {
+          FY28: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
           FY29: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
           FY30: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
           FY31: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
-          FY32: 'Consistent with the platform rebuild’s planned 5% p.a. IT growth rate.',
         },
       },
-      2028
+      2027
     );
     await submitAs(jasonYong.id, blockA.id);
     await approveAs(jonathanTay.id, blockA.id);
@@ -2723,7 +2749,7 @@ export async function loadSampleData(): Promise<void> {
 
     const blockB = findBySource('BLOCK', lineB.id);
     setApiUser(jasonYong.id);
-    await api.budgetLines.update(blockB.id, { reviewer1UserId: andyOng.id, approverUserId: raineNg.id }, 2028);
+    await api.budgetLines.update(blockB.id, { reviewer1UserId: andyOng.id, approverUserId: raineNg.id }, 2027);
     await submitAs(jasonYong.id, blockB.id);
     await approveAs(andyOng.id, blockB.id); // left at Clarification (FO)
 
@@ -2736,7 +2762,7 @@ export async function loadSampleData(): Promise<void> {
     // regardless of anything Annual Budget does above).
     const blockC = findBySource('BLOCK', lineC.id);
     setApiUser(jasonYong.id);
-    await api.budgetLines.update(blockC.id, { reviewer1UserId: inactivePlaceholder.id }, 2028);
+    await api.budgetLines.update(blockC.id, { reviewer1UserId: inactivePlaceholder.id }, 2027);
 
     // ---------- Project Loan Pot demo data ----------
     // (Project FY Status (External)'s own showcase figures were tuned
@@ -2772,8 +2798,8 @@ export async function loadSampleData(): Promise<void> {
     mtpPeriod.updatedAt = now();
     const blockPeriod = db.budgetPeriods.find((p) => p.type === 'BLOCK')!;
     blockPeriod.status = 'Locked';
-    blockPeriod.startDate = '2028-04-01';
-    blockPeriod.endDate = '2033-03-31';
+    blockPeriod.startDate = '2027-04-01';
+    blockPeriod.endDate = '2032-03-31';
     blockPeriod.updatedAt = now();
     saveDb();
   } catch (e) {
@@ -2786,5 +2812,6 @@ export async function loadSampleData(): Promise<void> {
     throw e instanceof Error ? e : new Error(String(e));
   } finally {
     setApiUser(prevUserId);
+    setApiSimDate(prevSimDate);
   }
 }
